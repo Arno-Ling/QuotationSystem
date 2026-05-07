@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>我方首页 - MVP</title>
+<link rel="stylesheet" href="/static/common.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">🏢 模具委外采购系统 - 我方视角</div>
+  <div class="user">
+    <a href="/static/internal/basis/index.html" class="secondary" style="padding:6px 12px; border-radius:4px; font-size:12px;">🗄 基础数据库</a>
+    <a href="/static/internal/outsource-requests.html" class="secondary" style="padding:6px 12px; border-radius:4px; font-size:12px;">📨 询价单</a>
+    <a href="/static/internal/outsource-orders.html" class="secondary" style="padding:6px 12px; border-radius:4px; font-size:12px;">🛠 加工单</a>
+    <a href="/static/internal/approvals.html" class="secondary" style="padding:6px 12px; border-radius:4px; font-size:12px;">📋 我的待办</a>
+    <span class="badge">internal</span>
+    <span id="user-name">—</span>
+    <button class="logout" onclick="App.logout()">退出</button>
+  </div>
+</header>
+
+<main>
+  <div class="card">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+      <h2 style="margin:0;">📋 项目列表</h2>
+      <button class="primary" onclick="openCreateModal()">+ 新建项目</button>
+    </div>
+
+    <table id="tbl">
+      <thead>
+        <tr>
+          <th>编号</th>
+          <th>名称</th>
+          <th>客户</th>
+          <th>交期</th>
+          <th>报价</th>
+          <th>数量</th>
+          <th>状态</th>
+          <th>创建时间</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody id="tbody">
+        <tr><td colspan="9" class="empty">加载中...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</main>
+
+<!-- Modal: 新建项目 -->
+<div class="modal-bg" id="modal">
+  <div class="modal">
+    <h3>新建项目</h3>
+    <form id="frmCreate" onsubmit="return doCreate(event)">
+      <label>项目名称 *</label>
+      <input name="name" required>
+      <label>客户名称 *</label>
+      <input name="customer" required>
+      <div class="flex">
+        <div class="flex-grow">
+          <label>交期</label>
+          <input name="deadline" type="date">
+        </div>
+        <div class="flex-grow">
+          <label>订单数量</label>
+          <input name="quantity" type="number" min="1">
+        </div>
+      </div>
+      <label>客户确认的报价 (元/件)</label>
+      <input name="unit_price" type="number" step="0.01" min="0">
+      <label>项目描述</label>
+      <textarea name="description" rows="2"></textarea>
+
+      <div class="modal-actions">
+        <button type="button" class="secondary" onclick="closeCreateModal()">取消</button>
+        <button type="submit" class="primary">创建</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="/static/app.js"></script>
+<script>
+(function () {
+  const user = App.requireTenantType('internal');
+  document.getElementById('user-name').textContent = user.display_name || user.username;
+
+  function showToast(msg, type='success') {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = 'toast show ' + type;
+    setTimeout(() => t.className = 'toast', 2500);
+  }
+  window.showToast = showToast;
+
+  async function load() {
+    const tbody = document.getElementById('tbody');
+    try {
+      const data = await App.api('/api/internal/projects');
+      if (!data.items.length) {
+        tbody.innerHTML = `<tr><td colspan="9" class="empty">还没有项目，点击右上角【+ 新建项目】</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = data.items.map(p => `
+        <tr>
+          <td><code>${App.esc(p.project_no)}</code></td>
+          <td>${App.esc(p.name)}</td>
+          <td>${App.esc(p.customer)}</td>
+          <td>${App.esc(p.deadline || '—')}</td>
+          <td>${p.unit_price ? '¥' + p.unit_price : '—'}</td>
+          <td>${p.quantity || '—'}</td>
+          <td><span class="badge ${p.status}">${App.esc(p.status)}</span></td>
+          <td class="muted">${App.fmtDate(p.created_at)}</td>
+          <td class="row-actions">
+            <a href="/static/internal/project-detail.html?id=${p.id}" class="primary" style="padding:4px 10px; font-size:12px; background:#3b82f6; color:white; border-radius:4px; display:inline-block;">查看</a>
+          </td>
+        </tr>
+      `).join('');
+    } catch (e) {
+      tbody.innerHTML = `<tr><td colspan="9" class="empty">❌ ${App.esc(e.message)}</td></tr>`;
+    }
+  }
+
+  window.openCreateModal = () => document.getElementById('modal').classList.add('show');
+  window.closeCreateModal = () => document.getElementById('modal').classList.remove('show');
+
+  window.doCreate = async (ev) => {
+    ev.preventDefault();
+    const fd = new FormData(ev.target);
+    const body = {
+      name: fd.get('name'),
+      customer: fd.get('customer'),
+      deadline: fd.get('deadline') || null,
+      unit_price: fd.get('unit_price') ? parseFloat(fd.get('unit_price')) : null,
+      quantity: fd.get('quantity') ? parseInt(fd.get('quantity')) : null,
+      description: fd.get('description') || '',
+    };
+    try {
+      const r = await App.api('/api/internal/projects', { method:'POST', body });
+      showToast('✓ 项目已创建: ' + r.project_no);
+      closeCreateModal();
+      ev.target.reset();
+      load();
+    } catch (e) {
+      showToast('❌ ' + e.message, 'error');
+    }
+    return false;
+  };
+
+  load();
+})();
+</script>
+</body>
+</html>

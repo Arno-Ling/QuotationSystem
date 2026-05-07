@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>项目详情 - MVP</title>
+<link rel="stylesheet" href="/static/common.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <a href="/static/internal/home.html" style="color:inherit;">🏢 模具委外采购系统</a>
+    &nbsp;›&nbsp; <span id="pnTitle" style="color:#e2e8f0;">项目详情</span>
+  </div>
+  <div class="user">
+    <a href="/static/internal/approvals.html" class="secondary" style="padding:6px 12px; border-radius:4px; font-size:12px;">📋 我的待办</a>
+    <span class="badge">internal</span>
+    <span id="user-name">—</span>
+    <button class="logout" onclick="App.logout()">退出</button>
+  </div>
+</header>
+
+<main>
+  <!-- 基本信息 -->
+  <div class="card">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <h2 style="margin:0;">📋 基本信息</h2>
+      <div class="row-actions">
+        <span id="statusChip" class="badge"></span>
+        <a href="#" id="btnViewDec" class="primary" style="display:none; padding:8px 14px; background:#3b82f6; color:white; border-radius:5px; font-size:13px;">📊 查看决策</a>
+        <button class="primary" id="btnConfirm" onclick="doConfirm()" style="display:none;">✅ 确认项目</button>
+        <button class="primary" id="btnDecide" onclick="goDecide()" style="display:none; background:#10b981;">🤖 触发生产决策</button>
+      </div>
+    </div>
+    <div style="margin-top:14px;">
+      <div class="flex">
+        <div class="flex-grow">
+          <label>项目编号</label>
+          <div style="padding:8px 10px;"><code id="v_no">—</code></div>
+        </div>
+        <div class="flex-grow">
+          <label>客户</label>
+          <div id="v_customer" style="padding:8px 10px;">—</div>
+        </div>
+        <div class="flex-grow">
+          <label>交期</label>
+          <div id="v_deadline" style="padding:8px 10px;">—</div>
+        </div>
+      </div>
+      <div class="flex">
+        <div class="flex-grow">
+          <label>报价 (元/件)</label>
+          <div id="v_price" style="padding:8px 10px;">—</div>
+        </div>
+        <div class="flex-grow">
+          <label>订单数量</label>
+          <div id="v_qty" style="padding:8px 10px;">—</div>
+        </div>
+        <div class="flex-grow">
+          <label>创建时间</label>
+          <div id="v_created" class="muted" style="padding:8px 10px;">—</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 零件清单 -->
+  <div class="card">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+      <h2 style="margin:0;">🔧 零件清单</h2>
+      <button class="primary" id="btnAddPart" onclick="openPartModal()" style="display:none;">+ 添加零件</button>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>零件号</th>
+          <th>名称</th>
+          <th>材质</th>
+          <th>数量</th>
+          <th>工序（新）</th>
+          <th>规格</th>
+          <th style="width:140px;">操作</th>
+        </tr>
+      </thead>
+      <tbody id="partsBody"><tr><td colspan="7" class="empty">加载中...</td></tr></tbody>
+    </table>
+  </div>
+
+  <!-- 图纸 -->
+  <div class="card">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+      <h2 style="margin:0;">📐 图纸 & 附件</h2>
+      <label id="btnUpload" style="display:none;">
+        <input type="file" id="fileInput" style="display:none;" onchange="doUpload(event)">
+        <span class="primary" style="display:inline-block; padding:8px 16px; cursor:pointer;">+ 上传图纸</span>
+      </label>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>文件名</th>
+          <th>分类</th>
+          <th>大小</th>
+          <th>上传时间</th>
+          <th style="width:80px;">操作</th>
+        </tr>
+      </thead>
+      <tbody id="attsBody"><tr><td colspan="5" class="empty">加载中...</td></tr></tbody>
+    </table>
+  </div>
+</main>
+
+<!-- Modal: 添加零件 -->
+<div class="modal-bg" id="partModal">
+  <div class="modal">
+    <h3>添加零件</h3>
+    <form id="frmPart" onsubmit="return doAddPart(event)">
+      <div class="flex">
+        <div class="flex-grow">
+          <label>零件号 <span class="muted">(规范：die-02/part-01/ins-03)</span> *</label>
+          <input name="part_no" required placeholder="die-02">
+        </div>
+        <div class="flex-grow">
+          <label>数量</label>
+          <input name="qty" type="number" min="1" value="1">
+        </div>
+      </div>
+      <label>零件名称</label>
+      <input name="part_name">
+      <label>材质（如 45# 钢 / Cr12MoV / SKD61）</label>
+      <input name="material">
+      <label>工序简述 <span class="muted">(仅留作备注，精细工序请在零件行里点【管理工序】)</span></label>
+      <input name="processes" placeholder="磨,铣,热处理">
+      <label>规格</label>
+      <input name="spec">
+      <div class="modal-actions">
+        <button type="button" class="secondary" onclick="closePartModal()">取消</button>
+        <button type="submit" class="primary">添加</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: 工序管理 -->
+<div class="modal-bg" id="procModal">
+  <div class="modal" style="max-width:720px;">
+    <h3 style="margin:0 0 12px;">🧩 工序清单 — <span id="pmPartNo" style="font-family:monospace;"></span></h3>
+    <table style="margin-bottom:16px;">
+      <thead>
+        <tr>
+          <th style="width:50px;">#</th>
+          <th>工序编号</th>
+          <th>加工方式</th>
+          <th>面</th>
+          <th>工时</th>
+          <th style="width:60px;"></th>
+        </tr>
+      </thead>
+      <tbody id="procBody"><tr><td colspan="6" class="empty">—</td></tr></tbody>
+    </table>
+    <h4 style="margin:16px 0 8px;">+ 新增工序</h4>
+    <form id="frmProc" onsubmit="return doAddProc(event)">
+      <div class="flex">
+        <div class="flex-grow">
+          <label>加工方式 *</label>
+          <select name="method_name" id="methodSelect" required></select>
+        </div>
+        <div class="flex-grow">
+          <label>面 <span class="muted">(多选 A-F)</span></label>
+          <div id="facesBox" style="display:flex; gap:8px; padding:6px 0;">
+            <label><input type="checkbox" value="A"> A</label>
+            <label><input type="checkbox" value="B"> B</label>
+            <label><input type="checkbox" value="C"> C</label>
+            <label><input type="checkbox" value="D"> D</label>
+            <label><input type="checkbox" value="E"> E</label>
+            <label><input type="checkbox" value="F"> F</label>
+          </div>
+        </div>
+        <div style="width:90px;">
+          <label>工时(h)</label>
+          <input name="est_hours" type="number" step="0.1" min="0">
+        </div>
+      </div>
+      <label>备注</label>
+      <input name="notes">
+      <div class="modal-actions">
+        <button type="button" class="secondary" onclick="closeProcModal()">关闭</button>
+        <button type="submit" class="primary">添加工序</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="/static/app.js"></script>
+<script>
+(function () {
+  const user = App.requireTenantType('internal');
+  document.getElementById('user-name').textContent = user.display_name || user.username;
+
+  const pid = new URLSearchParams(location.search).get('id');
+  if (!pid) { alert('缺少项目 ID'); location.href = '/static/internal/home.html'; return; }
+
+  function showToast(msg, type='success') {
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.className = 'toast show ' + type;
+    setTimeout(() => t.className = 'toast', 2500);
+  }
+  window.showToast = showToast;
+
+  async function load() {
+    try {
+      const data = await App.api('/api/internal/projects/' + pid);
+      const p = data.project;
+
+      document.getElementById('pnTitle').textContent = p.name;
+      document.getElementById('v_no').textContent = p.project_no;
+      document.getElementById('v_customer').textContent = p.customer || '—';
+      document.getElementById('v_deadline').textContent = p.deadline || '—';
+      document.getElementById('v_price').textContent = p.unit_price ? '¥' + p.unit_price : '—';
+      document.getElementById('v_qty').textContent = p.quantity || '—';
+      document.getElementById('v_created').textContent = App.fmtDate(p.created_at);
+
+      const chip = document.getElementById('statusChip');
+      chip.className = 'badge ' + p.status;
+      chip.textContent = p.status;
+
+      // Action buttons based on status
+      document.getElementById('btnConfirm').style.display = p.status === 'drafted' ? 'inline-block' : 'none';
+      document.getElementById('btnAddPart').style.display = p.status === 'drafted' ? 'inline-block' : 'none';
+      document.getElementById('btnUpload').style.display   = p.status === 'drafted' ? 'inline-block' : 'none';
+      document.getElementById('btnDecide').style.display   = p.status === 'confirmed' ? 'inline-block' : 'none';
+
+      // Show "查看决策" when project already in deciding/decided
+      const viewDec = document.getElementById('btnViewDec');
+      if (viewDec) {
+        viewDec.style.display = ['deciding', 'decided'].includes(p.status) ? 'inline-block' : 'none';
+        viewDec.href = `/static/internal/decisions.html?project_id=${pid}`;
+      }
+
+      // Parts
+      const partsBody = document.getElementById('partsBody');
+      if (!data.parts.length) {
+        partsBody.innerHTML = `<tr><td colspan="7" class="empty">还没有零件，点【+ 添加零件】</td></tr>`;
+      } else {
+        partsBody.innerHTML = data.parts.map(pt => {
+          const plist = pt.process_list || [];
+          const procHtml = plist.length
+            ? plist.map(pr => {
+                const forced = pr.is_internal_capable === false
+                  ? ' style="background:#fca5a5; color:#7f1d1d;"' : '';
+                return `<span class="badge drafted" ${forced} title="${App.esc(pr.method_name)}${pr.faces?' / 面:'+App.esc(pr.faces):''}">${App.esc(pr.process_code)}</span>`;
+              }).join(' ')
+            : (pt.processes.length
+                ? pt.processes.map(s => '<span class="badge drafted" style="margin-right:4px;">'+App.esc(s)+'</span>').join('')
+                : '<span class="muted">未录入</span>');
+          const actions = [];
+          if (p.status === 'drafted') {
+            actions.push(`<button class="secondary" onclick="openProcModal(${pt.id}, '${App.esc(pt.part_no)}')">管理工序</button>`);
+            actions.push(`<button class="danger" onclick="delPart(${pt.id})">删除</button>`);
+          } else {
+            actions.push(`<button class="secondary" onclick="openProcModal(${pt.id}, '${App.esc(pt.part_no)}')">查看工序</button>`);
+          }
+          return `
+            <tr>
+              <td><code>${App.esc(pt.part_no)}</code></td>
+              <td>${App.esc(pt.part_name || '—')}</td>
+              <td>${App.esc(pt.material || '—')}</td>
+              <td>${pt.qty}</td>
+              <td>${procHtml}</td>
+              <td>${App.esc(pt.spec || '—')}</td>
+              <td>${actions.join(' ')}</td>
+            </tr>
+          `;
+        }).join('');
+      }
+
+      // Attachments
+      const attsBody = document.getElementById('attsBody');
+      if (!data.attachments.length) {
+        attsBody.innerHTML = `<tr><td colspan="5" class="empty">还没有图纸，点【+ 上传图纸】</td></tr>`;
+      } else {
+        attsBody.innerHTML = data.attachments.map(a => `
+          <tr>
+            <td>${App.esc(a.file_name)}</td>
+            <td><span class="badge drafted">${App.esc(a.category || '—')}</span></td>
+            <td>${a.file_size ? (a.file_size/1024).toFixed(1) + ' KB' : '—'}</td>
+            <td class="muted">${App.fmtDate(a.created_at)}</td>
+            <td><a href="/api/internal/attachments/${a.id}/download" target="_blank">下载</a></td>
+          </tr>
+        `).join('');
+      }
+    } catch (e) {
+      showToast('❌ ' + e.message, 'error');
+    }
+  }
+
+  window.openPartModal = () => document.getElementById('partModal').classList.add('show');
+  window.closePartModal = () => document.getElementById('partModal').classList.remove('show');
+
+  window.doAddPart = async (ev) => {
+    ev.preventDefault();
+    const fd = new FormData(ev.target);
+    const proc = (fd.get('processes') || '').split(',').map(s => s.trim()).filter(Boolean);
+    const body = {
+      part_no: fd.get('part_no'),
+      part_name: fd.get('part_name') || null,
+      material: fd.get('material') || null,
+      qty: parseInt(fd.get('qty')) || 1,
+      processes: proc,
+      spec: fd.get('spec') || null,
+    };
+    try {
+      await App.api(`/api/internal/projects/${pid}/parts`, { method:'POST', body });
+      showToast('✓ 零件已添加');
+      ev.target.reset();
+      closePartModal();
+      load();
+    } catch (e) {
+      showToast('❌ ' + e.message, 'error');
+    }
+    return false;
+  };
+
+  window.delPart = async (part_id) => {
+    if (!confirm('确定删除这个零件吗？')) return;
+    try {
+      await App.api(`/api/internal/projects/${pid}/parts/${part_id}`, { method:'DELETE' });
+      showToast('✓ 已删除');
+      load();
+    } catch (e) { showToast('❌ ' + e.message, 'error'); }
+  };
+
+  window.doUpload = async (ev) => {
+    const file = ev.target.files[0];
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('category', 'drawing');
+    try {
+      await App.api(`/api/internal/projects/${pid}/attachments`, { method:'POST', body: fd });
+      showToast('✓ 图纸已上传');
+      ev.target.value = '';
+      load();
+    } catch (e) { showToast('❌ ' + e.message, 'error'); }
+  };
+
+  window.doConfirm = async () => {
+    if (!confirm('确认项目后将无法修改基本信息、零件和图纸。继续？')) return;
+    try {
+      await App.api(`/api/internal/projects/${pid}/confirm`, { method:'POST' });
+      showToast('✓ 项目已确认');
+      load();
+    } catch (e) { showToast('❌ ' + e.message, 'error'); }
+  };
+
+  window.goDecide = async () => {
+    try {
+      const r = await App.api(`/api/internal/projects/${pid}/decide`, { method: 'POST' });
+      showToast(`✓ 已生成 ${r.created} 条决策行`);
+      setTimeout(() => {
+        location.href = `/static/internal/decisions.html?project_id=${pid}`;
+      }, 500);
+    } catch (e) {
+      // Already deciding? Just go to the page.
+      if (String(e.message).includes('deciding')) {
+        location.href = `/static/internal/decisions.html?project_id=${pid}`;
+      } else {
+        showToast('❌ ' + e.message, 'error');
+      }
+    }
+  };
+
+  // ------- 工序管理 modal -------
+  let _currentPartId = null;
+  let _methodCache = null;
+
+  async function ensureMethods() {
+    if (_methodCache) return _methodCache;
+    const r = await App.api('/api/internal/process-methods');
+    _methodCache = r.items || [];
+    const sel = document.getElementById('methodSelect');
+    const groups = {};
+    _methodCache.forEach(m => {
+      (groups[m.category] = groups[m.category] || []).push(m);
+    });
+    const labelMap = {
+      cutting: '切削', grinding: '磨削', edm: '电火花/线割',
+      heat: '热处理', surface: '表面处理',
+    };
+    sel.innerHTML = Object.keys(groups).map(cat =>
+      `<optgroup label="${labelMap[cat] || cat}">` +
+      groups[cat].map(m => `<option value="${App.esc(m.name)}" data-internal="${m.is_internal_capable}">${App.esc(m.name)}${m.is_internal_capable?'':' ⚠ 强制委外'}</option>`).join('') +
+      `</optgroup>`
+    ).join('');
+    return _methodCache;
+  }
+
+  async function loadProcesses(part_id) {
+    const r = await App.api(`/api/internal/projects/${pid}/parts/${part_id}/processes`);
+    const body = document.getElementById('procBody');
+    if (!r.items.length) {
+      body.innerHTML = `<tr><td colspan="6" class="empty">还没有工序</td></tr>`;
+    } else {
+      body.innerHTML = r.items.map(pr => {
+        const forceTag = pr.is_internal_capable === false
+          ? ' <span style="background:#fca5a5; color:#7f1d1d; padding:1px 6px; border-radius:3px; font-size:11px;">强制委外</span>' : '';
+        return `
+          <tr>
+            <td>${pr.seq_no}</td>
+            <td><code>${App.esc(pr.process_code)}</code>${forceTag}</td>
+            <td>${App.esc(pr.method_name)}</td>
+            <td>${pr.faces ? App.esc(pr.faces) : '—'}</td>
+            <td>${pr.est_hours ?? '—'}</td>
+            <td>${/* 删除只允许 drafted */''}<button class="danger" onclick="delProc(${pr.id}, ${part_id})">×</button></td>
+          </tr>`;
+      }).join('');
+    }
+  }
+
+  window.openProcModal = async (part_id, part_no) => {
+    _currentPartId = part_id;
+    document.getElementById('pmPartNo').textContent = part_no;
+    document.getElementById('procModal').classList.add('show');
+    await ensureMethods();
+    await loadProcesses(part_id);
+  };
+  window.closeProcModal = () => {
+    document.getElementById('procModal').classList.remove('show');
+    _currentPartId = null;
+    load();  // 刷新主列表上的工序展示
+  };
+
+  window.doAddProc = async (ev) => {
+    ev.preventDefault();
+    const fd = new FormData(ev.target);
+    const faces = Array.from(document.querySelectorAll('#facesBox input:checked')).map(c => c.value).join(',');
+    const body = {
+      method_name: fd.get('method_name'),
+      faces: faces || null,
+      notes: fd.get('notes') || null,
+      est_hours: fd.get('est_hours') ? parseFloat(fd.get('est_hours')) : null,
+    };
+    try {
+      const r = await App.api(
+        `/api/internal/projects/${pid}/parts/${_currentPartId}/processes`,
+        { method: 'POST', body }
+      );
+      showToast(`✓ 已添加 ${r.process_code}`);
+      ev.target.reset();
+      document.querySelectorAll('#facesBox input').forEach(c => c.checked = false);
+      await loadProcesses(_currentPartId);
+    } catch (e) {
+      showToast('❌ ' + e.message, 'error');
+    }
+    return false;
+  };
+
+  window.delProc = async (process_id, part_id) => {
+    if (!confirm('确定删除这道工序吗？')) return;
+    try {
+      await App.api(`/api/internal/processes/${process_id}`, { method:'DELETE' });
+      showToast('✓ 已删除');
+      await loadProcesses(part_id);
+    } catch (e) { showToast('❌ ' + e.message, 'error'); }
+  };
+
+  load();
+})();
+</script>
+</body>
+</html>

@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     # OpenAI
     OPENAI_API_KEY: str = ""
     OPENAI_MODEL: str = "gpt-4"
+    OPENAI_BASE_URL: str = ""  # Optional base URL for OpenAI API
     
     # Email
     SMTP_HOST: str = "smtp.gmail.com"
@@ -45,6 +46,9 @@ class Settings(BaseSettings):
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = True
     LOG_LEVEL: str = "INFO"
+    ENVIRONMENT: str = "development"
+    HOST: str = "0.0.0.0"
+    PORT: int = 8000
     
     # CORS
     CORS_ORIGINS: str = "http://localhost:3000,http://localhost:5173"
@@ -56,6 +60,13 @@ class Settings(BaseSettings):
     # File Upload
     MAX_UPLOAD_SIZE: int = 10485760  # 10MB
     UPLOAD_DIR: str = "./uploads"
+    
+    # Exception Agent Configuration
+    EXCEPTION_AGENT_MODEL: str = "gpt-4"
+    EXCEPTION_AGENT_TEMPERATURE: float = 0.2
+    EXCEPTION_AGENT_MAX_STEPS: int = 15
+    CHROMA_DB_PATH: str = "./chroma_db/exception_agent"
+    EXCEPTION_AGENT_RAG_TOP_K: int = 5
     
     class Config:
         env_file = ".env"

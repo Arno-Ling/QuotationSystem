@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>询价邀请 - MVP</title>
+<link rel="stylesheet" href="/static/common.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <a href="/static/processor/home.html" style="color:inherit;">🏭 加工方首页</a>
+    &nbsp;›&nbsp; <span style="color:#e2e8f0;">询价邀请详情</span>
+  </div>
+  <div class="user">
+    <span class="badge processor">processor</span>
+    <span id="user-name">—</span>
+    <button class="logout" onclick="App.logout()">退出</button>
+  </div>
+</header>
+
+<main>
+  <div class="card">
+    <h2>📨 询价信息</h2>
+    <div id="basic" style="margin-top:14px;">加载中...</div>
+  </div>
+
+  <div class="card">
+    <h2>🔧 零件清单</h2>
+    <table style="margin-top:14px;">
+      <thead>
+        <tr><th>零件号</th><th>名称</th><th>材质</th><th>数量</th><th>工序</th><th>规格</th></tr>
+      </thead>
+      <tbody id="partsBody"></tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>📐 图纸</h2>
+    <ul id="attList" style="margin-top:10px; list-style:none;"></ul>
+  </div>
+
+  <div class="card" id="quoteCard">
+    <h2 id="quoteTitle">✍️ 提交报价</h2>
+    <div style="margin-top:14px;">
+      <div class="flex">
+        <div class="flex-grow">
+          <label>单价（元/件）*</label>
+          <input id="unit_price" type="number" step="0.01" min="0.01" required>
+        </div>
+        <div class="flex-grow">
+          <label>交期（天）*</label>
+          <input id="lead_time_days" type="number" min="1" required>
+        </div>
+      </div>
+      <label>备注 / 说明</label>
+      <textarea id="note" rows="3" placeholder="可选：特殊工艺说明 / 物流说明 / 其他"></textarea>
+      <div style="margin-top:16px; display:flex; justify-content:flex-end;">
+        <button class="primary" id="btnSubmit" onclick="submitQuote()">提交报价</button>
+      </div>
+    </div>
+  </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script src="/static/app.js"></script>
+<script>
+(function () {
+  const user = App.requireTenantType('processor');
+  document.getElementById('user-name').textContent = user.display_name || user.username;
+
+  const id = new URLSearchParams(location.search).get('id');
+  if (!id) { alert('缺少 id'); location.href = '/static/processor/home.html'; return; }
+
+  function toast(msg, type='success') {
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.className = 'toast show ' + type;
+    setTimeout(() => t.className = 'toast', 2500);
+  }
+
+  async function load() {
+    try {
+      const data = await App.api('/api/processor/invitations/' + id);
+      const inv = data.invitation;
+
+      // Basic
+      document.getElementById('basic').innerHTML = `
+        <div><b>项目</b>: <code>${App.esc(inv.project_no)}</code> ${App.esc(inv.project_name || '')}</div>
+        <div><b>标题</b>: ${App.esc(inv.request_title)}</div>
+        <div><b>客户</b>: ${App.esc(inv.customer || '—')} &nbsp;|&nbsp; <b>数量</b>: ${inv.quantity || '—'} &nbsp;|&nbsp; <b>截止</b>: ${App.esc(inv.deadline || '—')}</div>
+        <div style="margin-top:6px;"><b>所需工艺</b>:
+          ${(inv.required_processes || []).map(p => '<span class="badge drafted" style="margin-right:4px;">'+App.esc(p)+'</span>').join('')}
+        </div>
+        <div class="muted" style="margin-top:8px;">邀请状态: <span class="badge ${inv.invitation_status}">${App.esc(inv.invitation_status)}</span></div>
+      `;
+
+      // Parts
+      const partsBody = document.getElementById('partsBody');
+      if (!data.parts.length) {
+        partsBody.innerHTML = `<tr><td colspan="6" class="empty">无零件</td></tr>`;
+      } else {
+        partsBody.innerHTML = data.parts.map(p => `
+          <tr>
+            <td><code>${App.esc(p.part_no)}</code></td>
+            <td>${App.esc(p.part_name || '—')}</td>
+            <td>${App.esc(p.material || '—')}</td>
+            <td>${p.qty}</td>
+            <td>${(p.processes || []).map(x => '<span class="badge drafted" style="margin-right:4px;">'+App.esc(x)+'</span>').join('')}</td>
+            <td>${App.esc(p.spec || '—')}</td>
+          </tr>
+        `).join('');
+      }
+
+      // Attachments
+      const attList = document.getElementById('attList');
+      if (!data.attachments.length) {
+        attList.innerHTML = '<li class="muted">无图纸</li>';
+      } else {
+        attList.innerHTML = data.attachments.map(a => `
+          <li style="padding:6px 0;">
+            📄 ${App.esc(a.file_name)} &nbsp;
+            <span class="muted">(${a.file_size ? (a.file_size/1024).toFixed(1) + ' KB' : '—'})</span>
+            &nbsp; <a href="/api/processor/attachments/${a.id}/download" target="_blank">下载</a>
+          </li>
+        `).join('');
+      }
+
+      // Quote form
+      const qc = document.getElementById('quoteCard');
+      const btn = document.getElementById('btnSubmit');
+      if (inv.request_status !== 'inviting') {
+        document.getElementById('quoteTitle').textContent = '⏰ 报价已截止';
+        btn.disabled = true;
+        btn.textContent = '已截止';
+      } else if (data.my_quote) {
+        document.getElementById('quoteTitle').textContent = '✏️ 修改报价';
+        document.getElementById('unit_price').value = data.my_quote.unit_price;
+        document.getElementById('lead_time_days').value = data.my_quote.lead_time_days;
+        document.getElementById('note').value = data.my_quote.note || '';
+        btn.textContent = '更新报价';
+      }
+    } catch (e) { toast('❌ ' + e.message, 'error'); }
+  }
+
+  window.submitQuote = async () => {
+    const unit_price = parseFloat(document.getElementById('unit_price').value);
+    const lead_time_days = parseInt(document.getElementById('lead_time_days').value);
+    const note = document.getElementById('note').value.trim();
+
+    if (!(unit_price > 0) || !(lead_time_days > 0)) {
+      toast('❌ 请填写正确的单价和交期', 'error');
+      return;
+    }
+
+    try {
+      await App.api(`/api/processor/invitations/${id}/quote`, {
+        method: 'POST',
+        body: { unit_price, lead_time_days, note: note || null },
+      });
+      toast('✓ 报价已提交');
+      setTimeout(load, 500);
+    } catch (e) { toast('❌ ' + e.message, 'error'); }
+  };
+
+  load();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>委外询价单 - MVP</title>
+<link rel="stylesheet" href="/static/common.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <a href="/static/internal/home.html" style="color:inherit;">🏢 模具委外采购系统</a>
+    &nbsp;›&nbsp; <span style="color:#e2e8f0;">委外询价单</span>
+  </div>
+  <div class="user">
+    <a href="/static/internal/approvals.html" class="secondary" style="padding:6px 12px; border-radius:4px; font-size:12px;">📋 我的待办</a>
+    <a href="/static/internal/outsource-orders.html" class="secondary" style="padding:6px 12px; border-radius:4px; font-size:12px;">🛠 加工单</a>
+    <span class="badge">internal</span>
+    <span id="user-name">—</span>
+    <button class="logout" onclick="App.logout()">退出</button>
+  </div>
+</header>
+
+<main>
+  <div class="card">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+      <h2 style="margin:0;">📨 询价单列表</h2>
+      <div>
+        <select id="statusFilter" onchange="load()" style="width:150px;">
+          <option value="">所有状态</option>
+          <option value="draft">草稿</option>
+          <option value="inviting">询价中</option>
+          <option value="pending_award">待审批</option>
+          <option value="awarded">已中标</option>
+          <option value="cancelled">已取消</option>
+        </select>
+      </div>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>项目</th>
+          <th>标题</th>
+          <th>所需工艺</th>
+          <th>数量</th>
+          <th>交期</th>
+          <th>状态</th>
+          <th>创建时间</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"><tr><td colspan="9" class="empty">加载中...</td></tr></tbody>
+    </table>
+  </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script src="/static/app.js"></script>
+<script>
+(function () {
+  const user = App.requireTenantType('internal');
+  document.getElementById('user-name').textContent = user.display_name || user.username;
+
+  async function load() {
+    const tbody = document.getElementById('tbody');
+    const sf = document.getElementById('statusFilter').value;
+    const url = '/api/internal/outsource-requests' + (sf ? '?status_filter=' + sf : '');
+    try {
+      const data = await App.api(url);
+      if (!data.items.length) {
+        tbody.innerHTML = `<tr><td colspan="9" class="empty">还没有询价单（由生产决策审批通过后自动生成）</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = data.items.map(r => `
+        <tr>
+          <td><code>#${r.id}</code></td>
+          <td><code>${App.esc(r.project_no)}</code> ${App.esc(r.project_name || '')}</td>
+          <td>${App.esc(r.title)}</td>
+          <td>${(r.required_processes || []).map(p => '<span class="badge drafted" style="margin-right:4px;">'+App.esc(p)+'</span>').join('')}</td>
+          <td>${r.quantity || '—'}</td>
+          <td>${App.esc(r.deadline || '—')}</td>
+          <td><span class="badge ${r.status}">${App.esc(r.status)}</span></td>
+          <td class="muted">${App.fmtDate(r.created_at)}</td>
+          <td><a class="primary" href="/static/internal/outsource-request-detail.html?id=${r.id}"
+                 style="padding:5px 10px; font-size:12px; background:#3b82f6; color:white; border-radius:4px; text-decoration:none;">查看</a></td>
+        </tr>
+      `).join('');
+    } catch (e) {
+      tbody.innerHTML = `<tr><td colspan="9" class="empty">❌ ${App.esc(e.message)}</td></tr>`;
+    }
+  }
+  window.load = load;
+  load();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>登录 - 模具委外采购系统</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+  body {
+    min-height:100vh; display:flex; align-items:center; justify-content:center;
+    background: linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%); color:#e2e8f0;
+  }
+  .box {
+    background:#1e293b; padding:36px 32px; border-radius:12px;
+    width:360px; box-shadow:0 10px 40px rgba(0,0,0,.35);
+  }
+  h1 { font-size:20px; margin-bottom:6px; background:linear-gradient(90deg,#60a5fa,#a78bfa);-webkit-background-clip:text;-webkit-text-fill-color:transparent; }
+  .sub { font-size:12px; color:#94a3b8; margin-bottom:24px; }
+  label { display:block; font-size:12px; color:#94a3b8; margin:14px 0 6px; }
+  input {
+    width:100%; padding:10px 12px; background:#0f172a; color:#e2e8f0;
+    border:1px solid #334155; border-radius:6px; font-size:14px;
+  }
+  input:focus { outline:none; border-color:#60a5fa; }
+  button {
+    width:100%; margin-top:22px; padding:11px; font-size:14px; font-weight:500;
+    background:#3b82f6; color:white; border:none; border-radius:6px; cursor:pointer;
+  }
+  button:hover { background:#2563eb; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .err { margin-top:14px; font-size:12px; color:#fca5a5; background:#450a0a; padding:8px 10px; border-radius:4px; display:none; }
+  .hint {
+    margin-top:20px; padding:10px 12px; font-size:11px; color:#94a3b8;
+    background:#0f172a; border-radius:6px; border:1px solid #334155;
+  }
+  .hint code { color:#fbbf24; }
+</style>
+</head>
+<body>
+<div class="box">
+  <h1>模具委外采购系统</h1>
+  <div class="sub">轻量 MVP · 端口 8001</div>
+
+  <form id="frm" onsubmit="return doLogin(event)">
+    <label>账号</label>
+    <input id="username" type="text" autocomplete="username" required>
+    <label>密码</label>
+    <input id="password" type="password" autocomplete="current-password" required>
+    <button id="btn" type="submit">登录</button>
+  </form>
+
+  <div class="err" id="err"></div>
+
+  <div class="hint">
+    <b>测试账号</b>（密码: <code>test123</code>）<br>
+    我方: <code>alice</code> / <code>bob</code> / <code>carol</code><br>
+    加工方: <code>huaxinze</code> / <code>yuanmao</code>
+  </div>
+</div>
+
+<script>
+async function doLogin(ev) {
+  ev.preventDefault();
+  const btn = document.getElementById('btn');
+  const err = document.getElementById('err');
+  err.style.display = 'none';
+  btn.disabled = true; btn.textContent = '登录中...';
+
+  const username = document.getElementById('username').value.trim();
+  const password = document.getElementById('password').value;
+
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({username, password}),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({detail: '登录失败'}));
+      throw new Error(body.detail || 'HTTP ' + res.status);
+    }
+    const data = await res.json();
+
+    // 存 token 到 localStorage 和 cookie 双份（HTML 页面用 cookie，fetch 调用用 header）
+    localStorage.setItem('access_token', data.access_token);
+    localStorage.setItem('user_info', JSON.stringify(data));
+    document.cookie = `access_token=${data.access_token}; Path=/; Max-Age=86400; SameSite=Lax`;
+
+    // 跳转到对应首页
+    if (data.tenant_type === 'internal') {
+      window.location.href = '/static/internal/home.html';
+    } else if (data.tenant_type === 'processor') {
+      window.location.href = '/static/processor/home.html';
+    } else {
+      err.textContent = '不支持的租户类型: ' + data.tenant_type;
+      err.style.display = 'block';
+    }
+  } catch (e) {
+    err.textContent = '❌ ' + e.message;
+    err.style.display = 'block';
+  } finally {
+    btn.disabled = false; btn.textContent = '登录';
+  }
+  return false;
+}
+</script>
+</body>
+</html>

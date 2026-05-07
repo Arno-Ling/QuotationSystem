@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>基础数据库 - MVP</title>
+<link rel="stylesheet" href="/static/common.css">
+<style>
+.tabs { display:flex; gap:4px; border-bottom:2px solid #e5e7eb; margin-bottom:16px; }
+.tab  { padding:10px 16px; cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-2px; color:#6b7280; font-size:14px; }
+.tab.active { border-bottom-color:#3b82f6; color:#3b82f6; font-weight:600; }
+.alert-banner { padding:10px 14px; border-radius:6px; margin-bottom:16px; font-size:13px; }
+.alert-banner.warn { background:#fef3c7; color:#92400e; border:1px solid #fcd34d; }
+.alert-banner.err  { background:#fee2e2; color:#991b1b; border:1px solid #fca5a5; }
+.crud-toolbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+.crud-toolbar input[type=text] { width:280px; padding:6px 10px; }
+.flag-exp-soon { background:#fef3c7; color:#92400e; padding:2px 8px; border-radius:3px; font-size:11px; }
+.flag-expired  { background:#fee2e2; color:#991b1b; padding:2px 8px; border-radius:3px; font-size:11px; }
+.sub-tabs { display:flex; gap:4px; margin-bottom:12px; }
+.sub-tabs button { padding:4px 12px; font-size:12px; }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <a href="/static/internal/home.html" style="color:inherit;">🏢 模具委外采购系统</a>
+    &nbsp;›&nbsp; <span style="color:#e2e8f0;">基础数据库</span>
+  </div>
+  <div class="user">
+    <span class="badge">internal</span>
+    <span id="user-name">—</span>
+    <button class="logout" onclick="App.logout()">退出</button>
+  </div>
+</header>
+
+<main>
+  <div id="alertsBox"></div>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="mat">💎 原料价格</div>
+    <div class="tab"        data-tab="cost">💰 工艺参考价</div>
+    <div class="tab"        data-tab="eq">⚙️ 设备产能</div>
+    <div class="tab"        data-tab="moq">📦 MOQ 规则</div>
+    <div class="tab"        data-tab="inv">🏭 库存</div>
+    <div class="tab"        data-tab="sup">🏢 供应商能力</div>
+  </div>
+
+  <!-- 原料价格 -->
+  <div class="panel" data-panel="mat">
+    <div class="crud-toolbar">
+      <input type="text" id="matQ" placeholder="🔍 搜材料号/名称/规格..." oninput="loadMat()">
+      <button class="primary" onclick="openMatModal()">+ 新增价格</button>
+    </div>
+    <div class="card">
+      <table>
+        <thead><tr>
+          <th>材料号</th><th>名称</th><th>规格</th><th>单位</th>
+          <th>单价</th><th>供应商</th><th>生效起</th><th>生效止</th>
+          <th>状态</th><th style="width:80px;">操作</th>
+        </tr></thead>
+        <tbody id="matBody"><tr><td colspan="10" class="empty">加载中...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 工艺参考价 -->
+  <div class="panel" data-panel="cost" style="display:none;">
+    <div class="crud-toolbar">
+      <input type="text" id="costQ" placeholder="🔍 搜加工方式..." oninput="loadCost()">
+      <button class="primary" onclick="openCostModal()">+ 新增工艺价</button>
+    </div>
+    <div class="card">
+      <table>
+        <thead><tr>
+          <th>加工方式</th><th>类别</th><th>计价方式</th><th>单价</th>
+          <th>工时(h)</th><th>供应商</th><th>生效起</th><th>生效止</th>
+          <th style="width:60px;">操作</th>
+        </tr></thead>
+        <tbody id="costBody"><tr><td colspan="9" class="empty">—</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 设备产能 -->
+  <div class="panel" data-panel="eq" style="display:none;">
+    <div class="crud-toolbar">
+      <div></div>
+      <button class="primary" onclick="openEqModal()">+ 新增设备</button>
+    </div>
+    <div class="card">
+      <table>
+        <thead><tr>
+          <th>编号</th><th>名称</th><th>加工方式</th><th>最大尺寸</th>
+          <th>精度</th><th>日产能(h)</th><th>占用(h)</th><th>负载</th>
+          <th style="width:60px;">操作</th>
+        </tr></thead>
+        <tbody id="eqBody"><tr><td colspan="9" class="empty">—</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- MOQ 规则 -->
+  <div class="panel" data-panel="moq" style="display:none;">
+    <div class="crud-toolbar">
+      <div></div>
+      <button class="primary" onclick="openMoqModal()">+ 新增 MOQ</button>
+    </div>
+    <div class="card">
+      <table>
+        <thead><tr>
+          <th>材料号</th><th>规格</th><th>供应商</th>
+          <th>最小起订</th><th>倍数</th><th>单位</th>
+          <th>余量策略</th><th>备注</th><th style="width:60px;">操作</th>
+        </tr></thead>
+        <tbody id="moqBody"><tr><td colspan="9" class="empty">—</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 库存 -->
+  <div class="panel" data-panel="inv" style="display:none;">
+    <div class="crud-toolbar">
+      <div class="sub-tabs">
+        <button class="secondary" data-inv-filter="" onclick="filterInv('')">全部</button>
+        <button class="secondary" data-inv-filter="normal" onclick="filterInv('normal')">正常库存</button>
+        <button class="secondary" data-inv-filter="moq_surplus" onclick="filterInv('moq_surplus')">MOQ 余量</button>
+        <button class="secondary" data-inv-filter="rework_return" onclick="filterInv('rework_return')">异常返库</button>
+      </div>
+      <button class="primary" onclick="openInvModal()">+ 手工入库</button>
+    </div>
+    <div class="card">
+      <table>
+        <thead><tr>
+          <th>材料号</th><th>规格</th><th>批次</th><th>数量</th><th>单位</th>
+          <th>类型</th><th>库位</th><th>入库时间</th><th>备注</th>
+        </tr></thead>
+        <tbody id="invBody"><tr><td colspan="9" class="empty">—</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 供应商能力 -->
+  <div class="panel" data-panel="sup" style="display:none;">
+    <div class="card">
+      <table>
+        <thead><tr>
+          <th>供应商</th><th>类别</th><th>工艺能力（绿=内部/红=强制委外）</th>
+          <th>联系人</th><th>电话</th><th>评分</th>
+        </tr></thead>
+        <tbody id="supBody"><tr><td colspan="6" class="empty">—</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<!-- 原料价格 modal -->
+<div class="modal-bg" id="matModal">
+  <div class="modal">
+    <h3>新增原料价格</h3>
+    <form onsubmit="return submitMat(event)">
+      <div class="flex">
+        <div class="flex-grow"><label>材料号 *</label><input name="material_code" required></div>
+        <div class="flex-grow"><label>材料名称 *</label><input name="material_name" required></div>
+      </div>
+      <div class="flex">
+        <div class="flex-grow"><label>规格</label><input name="spec"></div>
+        <div class="flex-grow"><label>单位</label><input name="unit" value="kg"></div>
+        <div class="flex-grow"><label>单价 *</label><input name="unit_price" type="number" step="0.01" required></div>
+      </div>
+      <div class="flex">
+        <div class="flex-grow"><label>生效起 *</label><input name="valid_from" type="date" required></div>
+        <div class="flex-grow"><label>生效止</label><input name="valid_to" type="date"></div>
+      </div>
+      <label>备注</label><input name="remark">
+      <div class="modal-actions">
+        <button type="button" class="secondary" onclick="closeModal('matModal')">取消</button>
+        <button type="submit" class="primary">保存</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- 工艺价 modal -->
+<div class="modal-bg" id="costModal">
+  <div class="modal">
+    <h3>新增工艺参考价</h3>
+    <form onsubmit="return submitCost(event)">
+      <div class="flex">
+        <div class="flex-grow"><label>加工方式 *</label><select name="method_name" id="costMethodSel" required></select></div>
+        <div class="flex-grow"><label>计价方式</label>
+          <select name="cost_type"><option value="per_hour">按小时</option><option value="per_piece">按件</option><option value="per_face">按面</option></select>
+        </div>
+      </div>
+      <div class="flex">
+        <div class="flex-grow"><label>单价 *</label><input name="unit_cost" type="number" step="0.01" required></div>
+        <div class="flex-grow"><label>参考工时(h)</label><input name="est_time_hours" type="number" step="0.1"></div>
+      </div>
+      <div class="flex">
+        <div class="flex-grow"><label>生效起 *</label><input name="valid_from" type="date" required></div>
+        <div class="flex-grow"><label>生效止</label><input name="valid_to" type="date"></div>
+      </div>
+      <label>备注</label><input name="notes">
+      <div class="modal-actions">
+        <button type="button" class="secondary" onclick="closeModal('costModal')">取消</button>
+        <button type="submit" class="primary">保存</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- 设备 modal -->
+<div class="modal-bg" id="eqModal">
+  <div class="modal">
+    <h3>新增设备</h3>
+    <form onsubmit="return submitEq(event)">
+      <div class="flex">
+        <div class="flex-grow"><label>设备编号 *</label><input name="equipment_code" required></div>
+        <div class="flex-grow"><label>设备名称 *</label><input name="equipment_name" required></div>
+      </div>
+      <div class="flex">
+        <div class="flex-grow"><label>加工方式 *</label><select name="method_name" id="eqMethodSel" required></select></div>
+        <div class="flex-grow"><label>最大尺寸</label><input name="max_workpiece_dim" placeholder="800x500x500"></div>
+      </div>
+      <div class="flex">
+        <div class="flex-grow"><label>精度</label><input name="precision_grade" placeholder="IT7"></div>
+        <div class="flex-grow"><label>日产能(h)</label><input name="daily_hours" type="number" step="0.5" value="16"></div>
+      </div>
+      <label>备注</label><input name="notes">
+      <div class="modal-actions">
+        <button type="button" class="secondary" onclick="closeModal('eqModal')">取消</button>
+        <button type="submit" class="primary">保存</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- MOQ modal -->
+<div class="modal-bg" id="moqModal">
+  <div class="modal">
+    <h3>新增 MOQ 规则</h3>
+    <form onsubmit="return submitMoq(event)">
+      <div class="flex">
+        <div class="flex-grow"><label>材料号 *</label><input name="material_code" required></div>
+        <div class="flex-grow"><label>规格</label><input name="spec"></div>
+      </div>
+      <div class="flex">
+        <div class="flex-grow"><label>最小起订 *</label><input name="min_qty" type="number" min="1" required></div>
+        <div class="flex-grow"><label>倍数</label><input name="multiple_of" type="number" min="1" value="1"></div>
+        <div class="flex-grow"><label>单位</label><input name="unit" value="kg"></div>
+      </div>
+      <label>余量策略</label>
+      <select name="surplus_policy">
+        <option value="stock">入库当余量</option>
+        <option value="return">退回供应商</option>
+        <option value="waste">作废</option>
+      </select>
+      <label>备注</label><input name="notes">
+      <div class="modal-actions">
+        <button type="button" class="secondary" onclick="closeModal('moqModal')">取消</button>
+        <button type="submit" class="primary">保存</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- 库存 modal -->
+<div class="modal-bg" id="invModal">
+  <div class="modal">
+    <h3>手工入库</h3>
+    <form onsubmit="return submitInv(event)">
+      <div class="flex">
+        <div class="flex-grow"><label>材料号 *</label><input name="material_code" required></div>
+        <div class="flex-grow"><label>规格</label><input name="spec"></div>
+      </div>
+      <div class="flex">
+        <div class="flex-grow"><label>批次号</label><input name="batch_no"></div>
+        <div class="flex-grow"><label>数量 *</label><input name="qty" type="number" step="0.01" required></div>
+        <div class="flex-grow"><label>单位</label><input name="unit" value="kg"></div>
+      </div>
+      <label>类型</label>
+      <select name="inventory_type">
+        <option value="normal">正常库存</option>
+        <option value="moq_surplus">MOQ 余量</option>
+        <option value="rework_return">异常返库</option>
+      </select>
+      <label>库位</label><input name="warehouse_location">
+      <label>备注</label><input name="remark">
+      <div class="modal-actions">
+        <button type="button" class="secondary" onclick="closeModal('invModal')">取消</button>
+        <button type="submit" class="primary">入库</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="/static/app.js"></script>
+<script>
+(function () {
+  const user = App.requireTenantType('internal');
+  document.getElementById('user-name').textContent = user.display_name || user.username;
+
+  function showToast(msg, type='success') {
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.className = 'toast show ' + type;
+    setTimeout(() => t.className = 'toast', 2500);
+  }
+
+  window.closeModal = (id) => document.getElementById(id).classList.remove('show');
+
+  // ---------------- Alerts ----------------
+  async function loadAlerts() {
+    try {
+      const a = await App.api('/api/internal/basis/alerts');
+      const box = document.getElementById('alertsBox');
+      const parts = [];
+      if (a.expired.length) {
+        parts.push(`<div class="alert-banner err">❌ ${a.expired.length} 条价格已过期，请及时更新：${a.expired.slice(0,3).map(x=>App.esc(x.material_code)).join('、')}${a.expired.length>3?' 等':''}</div>`);
+      }
+      if (a.expiring_soon.length) {
+        parts.push(`<div class="alert-banner warn">⚠ ${a.expiring_soon.length} 条价格 15 天内过期：${a.expiring_soon.slice(0,3).map(x=>`${App.esc(x.material_code)}(${x.days_left}d)`).join('、')}${a.expiring_soon.length>3?' 等':''}</div>`);
+      }
+      if (a.moq_surplus.length) {
+        parts.push(`<div class="alert-banner warn">📦 ${a.moq_surplus.length} 条 MOQ 余量可用，下单时优先消耗</div>`);
+      }
+      box.innerHTML = parts.join('');
+    } catch (e) { /* silent */ }
+  }
+
+  // ---------------- Tabs ----------------
+  document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    const tab = t.dataset.tab;
+    document.querySelectorAll('.panel').forEach(p => p.style.display = (p.dataset.panel === tab ? '' : 'none'));
+    const loaders = { mat: loadMat, cost: loadCost, eq: loadEq, moq: loadMoq, inv: () => loadInv(_invFilter), sup: loadSup };
+    (loaders[tab] || (()=>{}))();
+  }));
+
+  // ---------------- 原料价格 ----------------
+  window.loadMat = async () => {
+    const q = document.getElementById('matQ').value.trim();
+    const r = await App.api('/api/internal/basis/material-prices' + (q ? '?q=' + encodeURIComponent(q) : ''));
+    const body = document.getElementById('matBody');
+    if (!r.items.length) { body.innerHTML = `<tr><td colspan="10" class="empty">暂无数据</td></tr>`; return; }
+    body.innerHTML = r.items.map(m => {
+      let flag = '';
+      if (m.expired)        flag = '<span class="flag-expired">已过期</span>';
+      else if (m.expiring_soon) flag = '<span class="flag-exp-soon">即将过期</span>';
+      return `<tr>
+        <td><code>${App.esc(m.material_code)}</code></td>
+        <td>${App.esc(m.material_name)}</td>
+        <td>${App.esc(m.spec || '—')}</td>
+        <td>${App.esc(m.unit)}</td>
+        <td>¥${m.unit_price.toFixed(2)}</td>
+        <td>${App.esc(m.supplier_name || '—')}</td>
+        <td>${App.esc(m.valid_from || '—')}</td>
+        <td>${App.esc(m.valid_to || '长期')} ${flag}</td>
+        <td>${m.is_active ? '✓' : '✕'}</td>
+        <td><button class="danger" onclick="delMat(${m.id})">停用</button></td>
+      </tr>`;
+    }).join('');
+  };
+  window.openMatModal = () => document.getElementById('matModal').classList.add('show');
+  window.submitMat = async (ev) => {
+    ev.preventDefault();
+    const fd = new FormData(ev.target);
+    const body = {};
+    fd.forEach((v, k) => { if (v !== '') body[k] = (k === 'unit_price') ? parseFloat(v) : v; });
+    try {
+      await App.api('/api/internal/basis/material-prices', { method: 'POST', body });
+      showToast('✓ 已保存');
+      closeModal('matModal'); ev.target.reset(); loadMat(); loadAlerts();
+    } catch (e) { showToast('❌ ' + e.message, 'error'); }
+    return false;
+  };
+  window.delMat = async (id) => {
+    if (!confirm('停用这条价格？')) return;
+    await App.api(`/api/internal/basis/material-prices/${id}`, { method: 'DELETE' });
+    showToast('✓ 已停用'); loadMat();
+  };
+
+  // ---------------- 工艺价 ----------------
+  let _methodCache = null;
+  async function ensureMethods() {
+    if (_methodCache) return _methodCache;
+    const r = await App.api('/api/internal/process-methods');
+    _methodCache = r.items;
+    const opts = _methodCache.map(m => `<option value="${App.esc(m.name)}">${App.esc(m.name)} · ${App.esc(m.category)}</option>`).join('');
+    document.getElementById('costMethodSel').innerHTML = opts;
+    document.getElementById('eqMethodSel').innerHTML   = opts;
+    return _methodCache;
+  }
+
+  window.loadCost = async () => {
+    await ensureMethods();
+    const q = document.getElementById('costQ').value.trim();
+    const r = await App.api('/api/internal/basis/process-costs' + (q ? '?q=' + encodeURIComponent(q) : ''));
+    const body = document.getElementById('costBody');
+    if (!r.items.length) { body.innerHTML = `<tr><td colspan="9" class="empty">暂无数据</td></tr>`; return; }
+    const labelMap = { per_hour: '按小时', per_piece: '按件', per_face: '按面' };
+    body.innerHTML = r.items.map(c => `<tr>
+      <td>${App.esc(c.method_name)}</td>
+      <td><span class="badge">${App.esc(c.category || '—')}</span></td>
+      <td>${labelMap[c.cost_type] || c.cost_type}</td>
+      <td>¥${c.unit_cost.toFixed(2)}</td>
+      <td>${c.est_time_hours ?? '—'}</td>
+      <td>${App.esc(c.supplier_name || '市场价')}</td>
+      <td>${App.esc(c.valid_from)}</td>
+      <td>${App.esc(c.valid_to || '—')}</td>
+      <td><button class="danger" onclick="delCost(${c.id})">停</button></td>
+    </tr>`).join('');
+  };
+  window.openCostModal = async () => { await ensureMethods(); document.getElementById('costModal').classList.add('show'); };
+  window.submitCost = async (ev) => {
+    ev.preventDefault();
+    const fd = new FormData(ev.target);
+    const body = {};
+    fd.forEach((v, k) => {
+      if (v === '') return;
+      if (['unit_cost','est_time_hours'].includes(k)) body[k] = parseFloat(v);
+      else body[k] = v;
+    });
+    try {
+      await App.api('/api/internal/basis/process-costs', { method: 'POST', body });
+      showToast('✓ 已保存'); closeModal('costModal'); ev.target.reset(); loadCost();
+    } catch (e) { showToast('❌ ' + e.message, 'error'); }
+    return false;
+  };
+  window.delCost = async (id) => {
+    if (!confirm('停用？')) return;
+    await App.api(`/api/internal/basis/process-costs/${id}`, { method: 'DELETE' });
+    showToast('✓ 已停用'); loadCost();
+  };
+
+  // ---------------- 设备 ----------------
+  window.loadEq = async () => {
+    await ensureMethods();
+    const r = await App.api('/api/internal/basis/equipment-capacity');
+    const body = document.getElementById('eqBody');
+    if (!r.items.length) { body.innerHTML = `<tr><td colspan="9" class="empty">暂无设备</td></tr>`; return; }
+    body.innerHTML = r.items.map(e => {
+      const pct = (e.load_ratio * 100).toFixed(0);
+      const barColor = e.load_ratio > 0.8 ? '#ef4444' : e.load_ratio > 0.5 ? '#f59e0b' : '#10b981';
+      return `<tr>
+        <td><code>${App.esc(e.equipment_code)}</code></td>
+        <td>${App.esc(e.equipment_name)}</td>
+        <td>${App.esc(e.method_name)}</td>
+        <td>${App.esc(e.max_workpiece_dim || '—')}</td>
+        <td>${App.esc(e.precision_grade || '—')}</td>
+        <td>${e.daily_hours}</td>
+        <td>${e.occupied_hours}</td>
+        <td><div style="background:#e5e7eb; border-radius:3px; overflow:hidden; width:90px; height:12px;"><div style="background:${barColor}; width:${pct}%; height:100%;"></div></div>${pct}%</td>
+        <td><button class="danger" onclick="delEq(${e.id})">停用</button></td>
+      </tr>`;
+    }).join('');
+  };
+  window.openEqModal = async () => { await ensureMethods(); document.getElementById('eqModal').classList.add('show'); };
+  window.submitEq = async (ev) => {
+    ev.preventDefault();
+    const fd = new FormData(ev.target);
+    const body = {};
+    fd.forEach((v, k) => { if (v === '') return; body[k] = k === 'daily_hours' ? parseFloat(v) : v; });
+    try {
+      await App.api('/api/internal/basis/equipment-capacity', { method: 'POST', body });
+      showToast('✓ 已保存'); closeModal('eqModal'); ev.target.reset(); loadEq();
+    } catch (e) { showToast('❌ ' + e.message, 'error'); }
+    return false;
+  };
+  window.delEq = async (id) => {
+    if (!confirm('停用这台设备？')) return;
+    await App.api(`/api/internal/basis/equipment-capacity/${id}`, { method: 'DELETE' });
+    showToast('✓ 已停用'); loadEq();
+  };
+
+  // ---------------- MOQ ----------------
+  window.loadMoq = async () => {
+    const r = await App.api('/api/internal/basis/moq-rules');
+    const body = document.getElementById('moqBody');
+    if (!r.items.length) { body.innerHTML = `<tr><td colspan="9" class="empty">暂无 MOQ</td></tr>`; return; }
+    const polMap = { stock: '入库当余量', return: '退回供应商', waste: '作废' };
+    body.innerHTML = r.items.map(m => `<tr>
+      <td><code>${App.esc(m.material_code)}</code></td>
+      <td>${App.esc(m.spec || '—')}</td>
+      <td>${App.esc(m.supplier_name || '任意')}</td>
+      <td>${m.min_qty}</td>
+      <td>×${m.multiple_of}</td>
+      <td>${App.esc(m.unit)}</td>
+      <td><span class="badge">${polMap[m.surplus_policy] || m.surplus_policy}</span></td>
+      <td>${App.esc(m.notes || '—')}</td>
+      <td><button class="danger" onclick="delMoq(${m.id})">停用</button></td>
+    </tr>`).join('');
+  };
+  window.openMoqModal = () => document.getElementById('moqModal').classList.add('show');
+  window.submitMoq = async (ev) => {
+    ev.preventDefault();
+    const fd = new FormData(ev.target);
+    const body = {};
+    fd.forEach((v, k) => { if (v === '') return; body[k] = (['min_qty','multiple_of'].includes(k)) ? parseInt(v) : v; });
+    try {
+      await App.api('/api/internal/basis/moq-rules', { method: 'POST', body });
+      showToast('✓ 已保存'); closeModal('moqModal'); ev.target.reset(); loadMoq();
+    } catch (e) { showToast('❌ ' + e.message, 'error'); }
+    return false;
+  };
+  window.delMoq = async (id) => {
+    if (!confirm('停用？')) return;
+    await App.api(`/api/internal/basis/moq-rules/${id}`, { method: 'DELETE' });
+    showToast('✓ 已停用'); loadMoq();
+  };
+
+  // ---------------- 库存 ----------------
+  let _invFilter = '';
+  window.filterInv = (f) => { _invFilter = f; loadInv(f); };
+  window.loadInv = async (filter = '') => {
+    const url = '/api/internal/basis/inventory' + (filter ? '?inventory_type=' + filter : '');
+    const r = await App.api(url);
+    const body = document.getElementById('invBody');
+    if (!r.items.length) { body.innerHTML = `<tr><td colspan="9" class="empty">暂无库存</td></tr>`; return; }
+    const typeMap = { normal: '正常', moq_surplus: 'MOQ余量', rework_return: '异常返库' };
+    body.innerHTML = r.items.map(i => `<tr>
+      <td><code>${App.esc(i.material_code)}</code></td>
+      <td>${App.esc(i.spec || '—')}</td>
+      <td>${App.esc(i.batch_no || '—')}</td>
+      <td>${i.qty}</td>
+      <td>${App.esc(i.unit)}</td>
+      <td><span class="badge ${i.inventory_type === 'moq_surplus' ? 'drafted':''}">${typeMap[i.inventory_type] || i.inventory_type}</span></td>
+      <td>${App.esc(i.warehouse_location || '—')}</td>
+      <td class="muted">${App.fmtDate(i.in_at)}</td>
+      <td>${App.esc(i.remark || '—')}</td>
+    </tr>`).join('');
+  };
+  window.openInvModal = () => document.getElementById('invModal').classList.add('show');
+  window.submitInv = async (ev) => {
+    ev.preventDefault();
+    const fd = new FormData(ev.target);
+    const body = {};
+    fd.forEach((v, k) => { if (v === '') return; body[k] = k === 'qty' ? parseFloat(v) : v; });
+    try {
+      await App.api('/api/internal/basis/inventory', { method: 'POST', body });
+      showToast('✓ 已入库'); closeModal('invModal'); ev.target.reset(); loadInv(_invFilter); loadAlerts();
+    } catch (e) { showToast('❌ ' + e.message, 'error'); }
+    return false;
+  };
+
+  // ---------------- 供应商能力（复用已有接口） ----------------
+  window.loadSup = async () => {
+    // 用 supplier_capabilities + suppliers 拼
+    // 这里直接调现有候选匹配接口取样不太合适，直接查 /basis 扩展更好
+    // MVP：调一个简化的聚合查询 — 先用 process-methods + supplier_capabilities 自己拼
+    const body = document.getElementById('supBody');
+    body.innerHTML = `<tr><td colspan="6" class="empty">⏳ 此页在后续阶段补充（下一迭代）</td></tr>`;
+  };
+
+  // ---------------- 启动 ----------------
+  loadAlerts();
+  loadMat();
+})();
+</script>
+</body>
+</html>

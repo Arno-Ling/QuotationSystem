@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>我的待办 - MVP</title>
+<link rel="stylesheet" href="/static/common.css">
+<style>
+  .kind-badge {
+    display:inline-block; padding:2px 8px; border-radius:4px; font-size:11px;
+    background:#1e3a8a; color:#93c5fd;
+  }
+  .decision-detail-table { margin-top:12px; }
+  .decision-detail-table td, .decision-detail-table th { padding:6px 10px; font-size:12px; }
+  .sugg-badge {
+    display:inline-block; padding:2px 6px; border-radius:3px; font-size:10px;
+  }
+  .sugg-badge.self_made { background:#065f46; color:#6ee7b7; }
+  .sugg-badge.outsource { background:#78350f; color:#fcd34d; }
+  .history-item {
+    padding:8px 12px; background:#0f172a; border-left:3px solid #60a5fa;
+    border-radius:4px; margin-bottom:6px; font-size:12px;
+  }
+  .history-item.approve { border-color:#10b981; }
+  .history-item.reject { border-color:#ef4444; }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <a href="/static/internal/home.html" style="color:inherit;">🏢 模具委外采购系统</a>
+    &nbsp;›&nbsp; <span style="color:#e2e8f0;">📋 我的待办</span>
+  </div>
+  <div class="user">
+    <span class="badge">internal</span>
+    <span id="user-name">—</span>
+    <button class="logout" onclick="App.logout()">退出</button>
+  </div>
+</header>
+
+<main>
+  <div class="card">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+      <h2 style="margin:0;">📋 待办列表</h2>
+      <button class="secondary" onclick="load()">↻ 刷新</button>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>任务 ID</th>
+          <th>类型</th>
+          <th>业务对象</th>
+          <th>分配给</th>
+          <th>创建时间</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"><tr><td colspan="6" class="empty">加载中...</td></tr></tbody>
+    </table>
+  </div>
+
+  <!-- 详情抽屉 -->
+  <div class="card" id="detailCard" style="display:none;">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <h2 style="margin:0;" id="detailTitle">审批详情</h2>
+      <button class="secondary" onclick="closeDetail()">关闭</button>
+    </div>
+    <div id="detailBody">加载中...</div>
+  </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script src="/static/app.js"></script>
+<script>
+(function () {
+  const user = App.requireTenantType('internal');
+  document.getElementById('user-name').textContent = user.display_name || user.username;
+
+  function toast(msg, type='success') {
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.className = 'toast show ' + type;
+    setTimeout(() => t.className = 'toast', 2500);
+  }
+
+  async function load() {
+    try {
+      const data = await App.api('/api/internal/approvals/pending');
+      const tbody = document.getElementById('tbody');
+      if (!data.items.length) {
+        tbody.innerHTML = `<tr><td colspan="6" class="empty">暂无待办</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = data.items.map(t => `
+        <tr>
+          <td><code>#${t.id}</code></td>
+          <td><span class="kind-badge">${App.esc(t.kind)}</span></td>
+          <td>${App.esc(t.subject_title || t.subject_id || '—')}</td>
+          <td class="muted">${App.esc(t.assignee_type)}:${App.esc(t.assignee_id)}</td>
+          <td class="muted">${App.fmtDate(t.created_at)}</td>
+          <td><button class="primary" onclick="openDetail(${t.id})">查看</button></td>
+        </tr>
+      `).join('');
+    } catch (e) {
+      document.getElementById('tbody').innerHTML =
+        `<tr><td colspan="6" class="empty">❌ ${App.esc(e.message)}</td></tr>`;
+    }
+  }
+  window.load = load;
+
+  window.openDetail = async (taskId) => {
+    try {
+      const data = await App.api('/api/internal/approvals/' + taskId);
+      const t = data.task;
+
+      // 特殊 kind：outsource_award 跳专用页面处理（要选中标）
+      if (t.kind === 'outsource_award') {
+        location.href = `/static/internal/outsource-award.html?task_id=${t.id}`;
+        return;
+      }
+
+      document.getElementById('detailCard').style.display = 'block';
+      document.getElementById('detailTitle').textContent = `审批详情 - #${t.id} (${t.kind})`;
+
+      let html = '';
+      if (t.kind === 'production_decision') {
+        const p = data.payload.project || {};
+        const ds = data.payload.decisions || [];
+        html = `
+          <div style="margin-top:14px;">
+            <div><b>项目</b>: <code>${App.esc(p.project_no || '—')}</code> ${App.esc(p.name || '')}</div>
+            <div><b>客户</b>: ${App.esc(p.customer || '—')}</div>
+            <div><b>数量</b>: ${p.quantity || '—'} &nbsp; <b>交期</b>: ${App.esc(p.deadline || '—')}</div>
+          </div>
+          <h3 style="font-size:13px; color:#94a3b8; margin:16px 0 8px; text-transform:uppercase;">
+            决策清单 (${ds.length} 行)
+          </h3>
+          <table class="decision-detail-table">
+            <thead>
+              <tr>
+                <th>零件号</th>
+                <th>工序</th>
+                <th>AI 建议</th>
+                <th>人工决定</th>
+                <th>AI 理由</th>
+                <th>是否强制</th>
+              </tr>
+            </thead>
+            <tbody>
+            ${ds.map(d => `
+              <tr>
+                <td><code>${App.esc(d.part_no)}</code> ${App.esc(d.part_name || '')}</td>
+                <td>${App.esc(d.process_name)}</td>
+                <td><span class="sugg-badge ${d.ai_suggestion}">${d.ai_suggestion === 'self_made' ? '自制' : '委外'}</span></td>
+                <td><span class="sugg-badge ${d.final_decision}">${d.final_decision === 'self_made' ? '自制' : '委外'}</span></td>
+                <td class="muted" style="font-size:11px;">${App.esc(d.ai_reason || '')}</td>
+                <td>${d.is_forced ? '🔥 是' : '—'}</td>
+              </tr>
+            `).join('')}
+            </tbody>
+          </table>
+        `;
+      } else {
+        html = `<pre style="background:#0f172a; padding:12px; border-radius:4px; overflow:auto; font-size:11px;">${App.esc(JSON.stringify(data.payload, null, 2))}</pre>`;
+      }
+
+      // 审批历史
+      if (data.history.length) {
+        html += `
+          <h3 style="font-size:13px; color:#94a3b8; margin:16px 0 8px; text-transform:uppercase;">历史</h3>
+          <div>
+            ${data.history.map(h => `
+              <div class="history-item ${App.esc(h.action)}">
+                <span style="font-weight:500;">${App.esc(h.action).toUpperCase()}</span>
+                by user#${App.esc(h.actor_id)} &nbsp;
+                <span class="muted">${App.fmtDate(h.created_at)}</span>
+                ${h.comment ? '<div style="margin-top:4px;">' + App.esc(h.comment) + '</div>' : ''}
+              </div>
+            `).join('')}
+          </div>
+        `;
+      }
+
+      // 操作按钮
+      if (t.status === 'pending') {
+        html += `
+          <div style="margin-top:20px;">
+            <label>备注</label>
+            <textarea id="actComment" rows="2" placeholder="可选：审批意见"></textarea>
+            <div style="margin-top:12px; display:flex; gap:10px; justify-content:flex-end;">
+              <button class="danger" style="padding:8px 16px; font-size:13px;" onclick="doAct(${t.id}, 'reject')">❌ 拒绝</button>
+              <button class="primary" style="background:#10b981;" onclick="doAct(${t.id}, 'approve')">✅ 同意</button>
+            </div>
+          </div>
+        `;
+      } else {
+        html += `<div class="muted" style="margin-top:14px;">任务状态：${App.esc(t.status)}（已处理）</div>`;
+      }
+
+      document.getElementById('detailBody').innerHTML = html;
+      document.getElementById('detailCard').scrollIntoView({behavior: 'smooth'});
+    } catch (e) {
+      toast('❌ ' + e.message, 'error');
+    }
+  };
+
+  window.closeDetail = () => {
+    document.getElementById('detailCard').style.display = 'none';
+  };
+
+  window.doAct = async (taskId, action) => {
+    const comment = document.getElementById('actComment').value.trim();
+    try {
+      const r = await App.api(`/api/internal/approvals/${taskId}/action`, {
+        method: 'POST',
+        body: { action, comment: comment || null },
+      });
+      let msg = action === 'approve' ? '✓ 已批准' : '✓ 已拒绝';
+      if (r.outsource_request_id) {
+        msg += `，委外询价单已创建 (id=${r.outsource_request_id})`;
+      }
+      toast(msg);
+      closeDetail();
+      load();
+    } catch (e) { toast('❌ ' + e.message, 'error'); }
+  };
+
+  load();
+})();
+</script>
+</body>
+</html>

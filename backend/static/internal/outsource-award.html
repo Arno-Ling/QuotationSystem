@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>报价对比审批 - MVP</title>
+<link rel="stylesheet" href="/static/common.css">
+<style>
+  tr.winner-row { background:#065f46 !important; }
+  tr.winner-row td { border-color: #10b981; }
+  .winner-flag { color:#fbbf24; font-size:16px; }
+  input[type="radio"] { width:18px; height:18px; cursor:pointer; }
+  .price-lowest { color:#10b981; font-weight:600; }
+  .price-deviation { font-size:11px; margin-left:6px; }
+  .dev-up { color:#ef4444; }
+  .dev-down { color:#10b981; }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <a href="/static/internal/approvals.html" style="color:inherit;">📋 待办</a>
+    &nbsp;›&nbsp; <span style="color:#e2e8f0;">报价对比审批</span>
+  </div>
+  <div class="user">
+    <span class="badge">internal</span>
+    <span id="user-name">—</span>
+    <button class="logout" onclick="App.logout()">退出</button>
+  </div>
+</header>
+
+<main>
+  <div class="card">
+    <h2>📨 询价单基本信息</h2>
+    <div id="basic" style="margin-top:14px;">加载中...</div>
+  </div>
+
+  <div class="card">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <h2 style="margin:0;">💰 报价对比</h2>
+      <div class="muted" style="font-size:12px;">选中一行作为中标供应商，然后点底部【✅ 批准中标】</div>
+    </div>
+    <table style="margin-top:14px;">
+      <thead>
+        <tr>
+          <th style="width:48px;">选</th>
+          <th>供应商</th>
+          <th>主营</th>
+          <th>单价（元）</th>
+          <th>交期（天）</th>
+          <th>数量</th>
+          <th>总金额</th>
+          <th>备注</th>
+          <th>提交时间</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"><tr><td colspan="9" class="empty">加载中...</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="card" id="actionCard" style="display:none;">
+    <h2>✍️ 审批意见</h2>
+    <textarea id="comment" rows="3" placeholder="审批意见（可选）"></textarea>
+    <div style="margin-top:16px; display:flex; gap:10px; justify-content:flex-end;">
+      <button class="danger" style="padding:10px 20px; font-size:13px;" onclick="doAct('reject')">❌ 拒绝全部</button>
+      <button class="primary" style="background:#10b981;" id="btnApprove" onclick="doAct('approve')" disabled>✅ 批准中标</button>
+    </div>
+  </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script src="/static/app.js"></script>
+<script>
+(function () {
+  const user = App.requireTenantType('internal');
+  document.getElementById('user-name').textContent = user.display_name || user.username;
+
+  const taskId = new URLSearchParams(location.search).get('task_id');
+  if (!taskId) { alert('缺少 task_id'); location.href = '/static/internal/approvals.html'; return; }
+
+  let selectedInv = null;
+  let quantity = 1;
+
+  function toast(msg, type='success') {
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.className = 'toast show ' + type;
+    setTimeout(() => t.className = 'toast', 2500);
+  }
+
+  async function load() {
+    try {
+      const data = await App.api('/api/internal/approvals/' + taskId);
+      const t = data.task;
+      if (t.kind !== 'outsource_award') {
+        alert('不是委外审批任务，返回');
+        location.href = '/static/internal/approvals.html';
+        return;
+      }
+
+      const req = data.payload.request;
+      quantity = req.quantity || 1;
+      document.getElementById('basic').innerHTML = `
+        <div><b>项目</b>: <code>${App.esc(req.project_no)}</code> ${App.esc(req.project_name || '')}</div>
+        <div><b>标题</b>: ${App.esc(req.title)}</div>
+        <div><b>数量</b>: ${req.quantity || '—'} &nbsp;|&nbsp; <b>交期</b>: ${App.esc(req.deadline || '—')}</div>
+        <div style="margin-top:6px;"><b>所需工艺</b>:
+          ${(req.required_processes || []).map(p => '<span class="badge drafted" style="margin-right:4px;">'+App.esc(p)+'</span>').join('')}
+        </div>
+      `;
+
+      const quotes = data.payload.quotations || [];
+      const tbody = document.getElementById('tbody');
+      if (!quotes.length) {
+        tbody.innerHTML = `<tr><td colspan="9" class="empty">没有任何报价</td></tr>`;
+        document.getElementById('actionCard').style.display = t.status === 'pending' ? 'block' : 'none';
+        return;
+      }
+
+      // lowest price for deviation calc
+      const lowest = Math.min(...quotes.map(q => q.unit_price));
+
+      tbody.innerHTML = quotes.map((q, idx) => {
+        const total = (q.unit_price * quantity).toFixed(2);
+        const isLowest = q.unit_price === lowest;
+        const dev = lowest === 0 ? 0 : ((q.unit_price - lowest) / lowest * 100);
+        let devBadge = '';
+        if (dev > 0) devBadge = `<span class="price-deviation dev-up">+${dev.toFixed(1)}%</span>`;
+        else if (isLowest) devBadge = `<span class="price-deviation dev-down">最低</span>`;
+
+        return `
+          <tr id="row-${q.invitation_id}">
+            <td><input type="radio" name="winner" value="${q.invitation_id}"
+                       onchange="pick(${q.invitation_id})"
+                       ${t.status !== 'pending' ? 'disabled' : ''}></td>
+            <td><b>${App.esc(q.supplier_name)}</b></td>
+            <td class="muted">${App.esc(q.supplier_category || '—')}</td>
+            <td class="${isLowest ? 'price-lowest' : ''}">¥${q.unit_price} ${devBadge}</td>
+            <td>${q.lead_time_days}</td>
+            <td>${quantity}</td>
+            <td><b>¥${total}</b></td>
+            <td class="muted" style="max-width:200px;">${App.esc(q.note || '')}</td>
+            <td class="muted">${q.submitted_at ? App.fmtDate(q.submitted_at) : '—'}</td>
+          </tr>
+        `;
+      }).join('');
+
+      document.getElementById('actionCard').style.display = t.status === 'pending' ? 'block' : 'none';
+      if (t.status !== 'pending') {
+        toast('ℹ️ 任务已处理（' + t.status + '）', 'success');
+      }
+    } catch (e) {
+      toast('❌ ' + e.message, 'error');
+    }
+  }
+
+  window.pick = (invId) => {
+    document.querySelectorAll('tr.winner-row').forEach(tr => tr.classList.remove('winner-row'));
+    document.getElementById('row-' + invId).classList.add('winner-row');
+    selectedInv = invId;
+    document.getElementById('btnApprove').disabled = false;
+  };
+
+  window.doAct = async (action) => {
+    if (action === 'approve' && !selectedInv) {
+      toast('❌ 请先选择中标供应商', 'error');
+      return;
+    }
+    const comment = document.getElementById('comment').value.trim();
+    const body = { action, comment: comment || null };
+    if (action === 'approve') body.awarded_invitation_id = selectedInv;
+
+    if (action === 'reject' && !confirm('拒绝后询价单将取消，无法恢复。确定？')) return;
+    if (action === 'approve' && !confirm('批准后将生成正式委外加工单，推送给加工方。确定？')) return;
+
+    try {
+      const r = await App.api(`/api/internal/approvals/${taskId}/award`, {
+        method: 'POST', body,
+      });
+      if (r.action === 'approve') {
+        toast(`✓ 中标已批准，加工单 ${r.order_no} 已生成`);
+      } else {
+        toast(`✓ 已拒绝全部报价`);
+      }
+      setTimeout(() => location.href = '/static/internal/approvals.html', 1500);
+    } catch (e) { toast('❌ ' + e.message, 'error'); }
+  };
+
+  load();
+})();
+</script>
+</body>
+</html>

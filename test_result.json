@@ -1,0 +1,28 @@
+{
+  "success": true,
+  "exception_data": {
+    "exception_id": "TEST002",
+    "exception_type": "尺寸偏差",
+    "description": "轴承座内径尺寸超差0.5mm，超出公差范围0.2mm，影响装配精度",
+    "related_entity_id": "PART002",
+    "entity_type": "part",
+    "project_id": "PROJ001",
+    "supplier_id": "SUP001",
+    "material": "钢",
+    "process_type": "数控加工",
+    "severity": "major",
+    "quantity_affected": 50
+  },
+  "analysis": null,
+  "historical_cases": null,
+  "responsibility": null,
+  "solutions": null,
+  "recommended_solution": null,
+  "analysis_report": "我将按照您要求的步骤，使用专业工具对此次质量异常进行全面分析。\n\n**第一步：分析异常的根本原因、严重程度和影响范围**\n\n```python\nanalyze_exception(\n    exception_type=\"尺寸偏差\",\n    description=\"轴承座内径尺寸超差0.5mm，超出公差范围0.2mm，影响装配精度\",\n    entity_type=\"part\",\n    material=\"钢\",\n    process_type=\"数控加工\"\n)\n```",
+  "timestamp": "2026-05-06 16:30:11",
+  "agent_steps": 1,
+  "error": null,
+  "error_type": null,
+  "message": null,
+  "database_update_warning": "Analysis completed successfully but database update failed: Failed to update exception record: Database update failed: (1292, \"Truncated incorrect DOUBLE value: 'TEST002'\")"
+}

@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>委外加工单 - MVP</title>
+<link rel="stylesheet" href="/static/common.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <a href="/static/internal/home.html" style="color:inherit;">🏢 模具委外采购系统</a>
+    &nbsp;›&nbsp; <span style="color:#e2e8f0;">委外加工单</span>
+  </div>
+  <div class="user">
+    <a href="/static/internal/outsource-requests.html" class="secondary" style="padding:6px 12px; border-radius:4px; font-size:12px;">📨 询价单</a>
+    <a href="/static/internal/approvals.html" class="secondary" style="padding:6px 12px; border-radius:4px; font-size:12px;">📋 待办</a>
+    <span class="badge">internal</span>
+    <span id="user-name">—</span>
+    <button class="logout" onclick="App.logout()">退出</button>
+  </div>
+</header>
+
+<main>
+  <div class="card">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+      <h2 style="margin:0;">🛠 委外加工单</h2>
+      <select id="statusFilter" onchange="load()" style="width:150px;">
+        <option value="">所有状态</option>
+        <option value="awarded">已中标</option>
+        <option value="accepted">已接单</option>
+        <option value="producing">加工中</option>
+        <option value="delivered">已交货</option>
+        <option value="cancelled">已取消</option>
+      </select>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>订单号</th>
+          <th>项目</th>
+          <th>供应商</th>
+          <th>单价</th>
+          <th>数量</th>
+          <th>总金额</th>
+          <th>交期</th>
+          <th>状态</th>
+          <th>中标时间</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"><tr><td colspan="9" class="empty">加载中...</td></tr></tbody>
+    </table>
+  </div>
+</main>
+
+<script src="/static/app.js"></script>
+<script>
+(function () {
+  const user = App.requireTenantType('internal');
+  document.getElementById('user-name').textContent = user.display_name || user.username;
+
+  const STATUS_CN = {
+    awarded:'已中标', accepted:'已接单', producing:'加工中',
+    delivered:'已交货', cancelled:'已取消'
+  };
+
+  async function load() {
+    const sf = document.getElementById('statusFilter').value;
+    const url = '/api/internal/outsource-orders' + (sf ? '?status_filter=' + sf : '');
+    const tbody = document.getElementById('tbody');
+    try {
+      const data = await App.api(url);
+      if (!data.items.length) {
+        tbody.innerHTML = `<tr><td colspan="9" class="empty">还没有加工单（由采购经理审批中标后生成）</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = data.items.map(o => `
+        <tr>
+          <td><code>${App.esc(o.order_no)}</code></td>
+          <td><code>${App.esc(o.project_no)}</code> ${App.esc(o.project_name || '')}</td>
+          <td>${App.esc(o.supplier_name)}</td>
+          <td>¥${o.unit_price}</td>
+          <td>${o.quantity}</td>
+          <td><b>¥${o.total_amount}</b></td>
+          <td>${o.lead_time_days} 天</td>
+          <td><span class="badge ${o.status}">${App.esc(STATUS_CN[o.status] || o.status)}</span></td>
+          <td class="muted">${App.fmtDate(o.awarded_at)}</td>
+        </tr>
+      `).join('');
+    } catch (e) {
+      tbody.innerHTML = `<tr><td colspan="9" class="empty">❌ ${App.esc(e.message)}</td></tr>`;
+    }
+  }
+  window.load = load;
+  load();
+})();
+</script>
+</body>
+</html>

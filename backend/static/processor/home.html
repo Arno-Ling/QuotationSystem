@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>加工方首页 - MVP</title>
+<link rel="stylesheet" href="/static/common.css">
+<style>
+  .tabs { display:flex; gap:0; border-bottom:1px solid #334155; margin-bottom:0; }
+  .tab {
+    padding:10px 18px; cursor:pointer; color:#94a3b8; font-size:13px; font-weight:500;
+    border-bottom:2px solid transparent;
+  }
+  .tab.active { color:#60a5fa; border-bottom-color:#60a5fa; }
+  .stat-box { display:inline-block; background:#0f172a; padding:10px 14px; border-radius:6px; margin-right:12px; }
+  .stat-box .num { font-size:22px; font-weight:600; }
+  .stat-box .lbl { font-size:11px; color:#94a3b8; }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">🏭 模具委外采购系统 - 加工方视角</div>
+  <div class="user">
+    <span class="badge processor">processor</span>
+    <span id="user-name">—</span>
+    <button class="logout" onclick="App.logout()">退出</button>
+  </div>
+</header>
+
+<main>
+  <div class="card">
+    <div style="display:flex; gap:0;" class="tabs">
+      <div class="tab active" data-tab="invitations">📨 询价邀请</div>
+      <div class="tab" data-tab="orders">🛠 加工单</div>
+    </div>
+
+    <!-- Tab: Invitations -->
+    <div id="tab-invitations" style="margin-top:18px;">
+      <div style="margin-bottom:12px;" id="invStats"></div>
+      <table>
+        <thead>
+          <tr>
+            <th>项目</th>
+            <th>标题</th>
+            <th>所需工艺</th>
+            <th>数量</th>
+            <th>截止</th>
+            <th>状态</th>
+            <th>我的报价</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="invBody"><tr><td colspan="8" class="empty">加载中...</td></tr></tbody>
+      </table>
+    </div>
+
+    <!-- Tab: Orders -->
+    <div id="tab-orders" style="margin-top:18px; display:none;">
+      <table>
+        <thead>
+          <tr>
+            <th>订单号</th>
+            <th>项目</th>
+            <th>单价</th>
+            <th>数量</th>
+            <th>总金额</th>
+            <th>交期（天）</th>
+            <th>状态</th>
+            <th>中标时间</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="ordBody"><tr><td colspan="9" class="empty">加载中...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script src="/static/app.js"></script>
+<script>
+(function () {
+  const user = App.requireTenantType('processor');
+  document.getElementById('user-name').textContent = user.display_name || user.username;
+
+  // Tab switching
+  document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    document.querySelectorAll('[id^="tab-"]').forEach(x => x.style.display = 'none');
+    document.getElementById('tab-' + t.dataset.tab).style.display = 'block';
+  }));
+
+  const INV_STATUS_CN = {sent:'待报价', quoted:'已报价', no_response:'未响应', cancelled:'已取消'};
+  const ORD_STATUS_CN = {awarded:'已中标', accepted:'已接单', producing:'加工中', delivered:'已交货', cancelled:'已取消'};
+
+  function toast(msg, type='success') {
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.className = 'toast show ' + type;
+    setTimeout(() => t.className = 'toast', 2500);
+  }
+
+  async function loadInvitations() {
+    const body = document.getElementById('invBody');
+    try {
+      const data = await App.api('/api/processor/invitations');
+      const s = data.stats;
+      document.getElementById('invStats').innerHTML = `
+        <div class="stat-box"><div class="num" style="color:#fbbf24;">${s.pending_quote}</div><div class="lbl">待报价</div></div>
+        <div class="stat-box"><div class="num" style="color:#6ee7b7;">${s.quoted}</div><div class="lbl">已报价</div></div>
+        <div class="stat-box"><div class="num" style="color:#94a3b8;">${s.expired}</div><div class="lbl">已过期</div></div>
+      `;
+      if (!data.items.length) {
+        body.innerHTML = `<tr><td colspan="8" class="empty">还没有询价邀请</td></tr>`;
+        return;
+      }
+      body.innerHTML = data.items.map(i => `
+        <tr>
+          <td><code>${App.esc(i.project_no)}</code> ${App.esc(i.project_name || '')}</td>
+          <td>${App.esc(i.request_title)}</td>
+          <td>${(i.required_processes || []).map(p => '<span class="badge drafted" style="margin-right:4px;">'+App.esc(p)+'</span>').join('')}</td>
+          <td>${i.quantity || '—'}</td>
+          <td class="muted">${App.esc(i.deadline || '—')}</td>
+          <td><span class="badge ${i.invitation_status}">${App.esc(INV_STATUS_CN[i.invitation_status] || i.invitation_status)}</span></td>
+          <td>${i.unit_price != null ? '¥' + i.unit_price + ' / ' + i.lead_time_days + '天' : '—'}</td>
+          <td><a class="primary" href="/static/processor/invitation-detail.html?id=${i.id}"
+                 style="padding:5px 10px; font-size:12px; background:#3b82f6; color:white; border-radius:4px; text-decoration:none;">
+            ${i.invitation_status === 'quoted' ? '查看 / 修改' : '查看报价'}
+          </a></td>
+        </tr>
+      `).join('');
+    } catch (e) {
+      body.innerHTML = `<tr><td colspan="8" class="empty">❌ ${App.esc(e.message)}</td></tr>`;
+    }
+  }
+
+  async function loadOrders() {
+    const body = document.getElementById('ordBody');
+    try {
+      const data = await App.api('/api/processor/orders');
+      if (!data.items.length) {
+        body.innerHTML = `<tr><td colspan="9" class="empty">还没有中标的加工单</td></tr>`;
+        return;
+      }
+      body.innerHTML = data.items.map(o => `
+        <tr>
+          <td><code>${App.esc(o.order_no)}</code></td>
+          <td><code>${App.esc(o.project_no)}</code> ${App.esc(o.project_name || '')}</td>
+          <td>¥${o.unit_price}</td>
+          <td>${o.quantity}</td>
+          <td><b>¥${o.total_amount}</b></td>
+          <td>${o.lead_time_days}</td>
+          <td><span class="badge ${o.status}">${App.esc(ORD_STATUS_CN[o.status] || o.status)}</span></td>
+          <td class="muted">${App.fmtDate(o.awarded_at)}</td>
+          <td><a class="primary" href="/static/processor/order-detail.html?id=${o.id}"
+                 style="padding:5px 10px; font-size:12px; background:#3b82f6; color:white; border-radius:4px; text-decoration:none;">查看</a></td>
+        </tr>
+      `).join('');
+    } catch (e) {
+      body.innerHTML = `<tr><td colspan="9" class="empty">❌ ${App.esc(e.message)}</td></tr>`;
+    }
+  }
+
+  loadInvitations();
+  loadOrders();
+})();
+</script>
+</body>
+</html>

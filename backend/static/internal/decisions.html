@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>生产决策 - MVP</title>
+<link rel="stylesheet" href="/static/common.css">
+<style>
+  .decision-row.forced td:first-child { border-left:3px solid #ef4444; }
+  .sugg-badge {
+    display:inline-block; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:500;
+  }
+  .sugg-badge.self_made { background:#065f46; color:#6ee7b7; }
+  .sugg-badge.outsource { background:#78350f; color:#fcd34d; }
+  select.dec-select {
+    padding:5px 8px; font-size:12px;
+    background:#0f172a; color:#e2e8f0; border:1px solid #334155; border-radius:4px;
+  }
+  select.dec-select:disabled { opacity:.6; cursor:not-allowed; }
+  .forced-tag { color:#ef4444; font-weight:500; font-size:11px; }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <a href="/static/internal/home.html" style="color:inherit;">🏢 模具委外采购系统</a>
+    &nbsp;›&nbsp; <span style="color:#e2e8f0;">生产决策</span>
+  </div>
+  <div class="user">
+    <a href="/static/internal/approvals.html" class="secondary" style="padding:6px 12px; border-radius:4px; font-size:12px;">📋 我的待办</a>
+    <span class="badge">internal</span>
+    <span id="user-name">—</span>
+    <button class="logout" onclick="App.logout()">退出</button>
+  </div>
+</header>
+
+<main>
+  <div class="card">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <h2 style="margin:0;">🤖 AI 生产决策建议</h2>
+      <div class="row-actions">
+        <span id="projBadge" class="badge"></span>
+        <button class="secondary" onclick="reload()">↻ 刷新</button>
+        <button class="primary" id="btnRedo" onclick="redoDecide()" style="display:none;">🔄 重新触发</button>
+        <button class="primary" id="btnSubmit" onclick="doSubmit()" style="display:none; background:#10b981;">✅ 提交审批</button>
+      </div>
+    </div>
+    <div class="muted" style="margin-top:8px;" id="projInfo">加载中...</div>
+  </div>
+
+  <div class="card">
+    <h2>📊 决策行</h2>
+    <div class="muted" style="margin-bottom:8px; font-size:11px;">
+      🔴 红色边框 = 强制委外（公司无此工艺能力，无法改为自制）&nbsp;|&nbsp;
+      所有行 AI 建议来自硬编码规则（stage 1 暂未接 LLM）
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>零件号</th>
+          <th>材质</th>
+          <th>工序</th>
+          <th>AI 建议</th>
+          <th>AI 理由</th>
+          <th>最终决定</th>
+          <th>状态</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"><tr><td colspan="7" class="empty">加载中...</td></tr></tbody>
+    </table>
+  </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script src="/static/app.js"></script>
+<script>
+(function () {
+  const user = App.requireTenantType('internal');
+  document.getElementById('user-name').textContent = user.display_name || user.username;
+
+  const pid = new URLSearchParams(location.search).get('project_id');
+  if (!pid) { alert('缺少 project_id'); location.href = '/static/internal/home.html'; return; }
+
+  function toast(msg, type='success') {
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.className = 'toast show ' + type;
+    setTimeout(() => t.className = 'toast', 2500);
+  }
+
+  async function load() {
+    try {
+      // 项目信息
+      const proj = await App.api(`/api/internal/projects/${pid}`);
+      document.getElementById('projInfo').innerHTML =
+        `项目 <code>${App.esc(proj.project_no || proj.project?.project_no)}</code> — ${App.esc(proj.project?.name || '')} | 客户: ${App.esc(proj.project?.customer)} | ${proj.project?.quantity} 件`;
+      const pb = document.getElementById('projBadge');
+      pb.textContent = proj.project?.status;
+      pb.className = 'badge ' + (proj.project?.status || '');
+
+      // 决策行
+      const data = await App.api(`/api/internal/projects/${pid}/decisions`);
+      window.__projStatus = data.project_status;
+      const tbody = document.getElementById('tbody');
+
+      if (!data.items.length) {
+        tbody.innerHTML = `<tr><td colspan="7" class="empty">还没有决策行 — 返回项目详情点【触发决策】</td></tr>`;
+      } else {
+        tbody.innerHTML = data.items.map(d => {
+          const editable = ['pending_review', 'reviewed'].includes(d.status);
+          const forced = d.is_forced;
+          const selectDisabled = !editable || forced;
+          return `
+            <tr class="decision-row ${forced ? 'forced' : ''}">
+              <td><code>${App.esc(d.part_no)}</code> ${App.esc(d.part_name || '')}</td>
+              <td>${App.esc(d.material || '—')}</td>
+              <td>${App.esc(d.process_name)} ${forced ? '<span class="forced-tag">🔥 强制</span>' : ''}</td>
+              <td><span class="sugg-badge ${d.ai_suggestion}">${d.ai_suggestion === 'self_made' ? '自制' : '委外'}</span></td>
+              <td class="muted" style="font-size:11px; max-width:260px;">${App.esc(d.ai_reason || '')}</td>
+              <td>
+                <select class="dec-select" ${selectDisabled ? 'disabled' : ''}
+                        onchange="updateDec(${d.id}, this.value)">
+                  <option value="self_made" ${d.final_decision === 'self_made' ? 'selected' : ''} ${forced ? 'disabled' : ''}>自制</option>
+                  <option value="outsource" ${d.final_decision === 'outsource' ? 'selected' : ''}>委外</option>
+                </select>
+              </td>
+              <td><span class="badge drafted">${App.esc(d.status)}</span></td>
+            </tr>
+          `;
+        }).join('');
+      }
+
+      // 按钮可见性
+      const projStatus = data.project_status;
+      document.getElementById('btnRedo').style.display   = (projStatus === 'deciding' && data.items.length > 0) ? 'inline-block' : 'none';
+      document.getElementById('btnSubmit').style.display = projStatus === 'deciding' ? 'inline-block' : 'none';
+
+    } catch (e) {
+      toast('❌ ' + e.message, 'error');
+    }
+  }
+
+  window.reload = load;
+
+  window.updateDec = async (id, value) => {
+    try {
+      await App.api('/api/internal/decisions/' + id, {
+        method: 'PATCH',
+        body: { final_decision: value },
+      });
+      toast('✓ 已更新');
+    } catch (e) {
+      toast('❌ ' + e.message, 'error');
+      load();
+    }
+  };
+
+  window.redoDecide = async () => {
+    if (!confirm('重新触发会清空未提交的决策行，确定吗？')) return;
+    try {
+      const r = await App.api(`/api/internal/projects/${pid}/decide`, { method: 'POST' });
+      toast(`✓ 已生成 ${r.created} 条决策行`);
+      load();
+    } catch (e) { toast('❌ ' + e.message, 'error'); }
+  };
+
+  window.doSubmit = async () => {
+    if (!confirm('提交后决策将送生产经理审批，不能再修改。确定吗？')) return;
+    try {
+      const r = await App.api(`/api/internal/projects/${pid}/decisions/submit`, { method: 'POST' });
+      toast(`✓ 已提交审批，task_id = ${r.task_id}`);
+      load();
+    } catch (e) { toast('❌ ' + e.message, 'error'); }
+  };
+
+  load();
+})();
+</script>
+</body>
+</html>
