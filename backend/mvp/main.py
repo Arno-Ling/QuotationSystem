@@ -23,6 +23,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from mvp.auth import router as auth_router
+from mvp.routes.admin import router as admin_router
 from mvp.routes.basis import router as basis_router
 from mvp.routes.common import router as common_router
 from mvp.routes.internal import router as internal_router
@@ -75,6 +76,7 @@ app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
 # Routes
 app.include_router(auth_router)
 app.include_router(internal_router)
+app.include_router(admin_router)
 app.include_router(basis_router)
 app.include_router(processor_router)
 app.include_router(material_router)

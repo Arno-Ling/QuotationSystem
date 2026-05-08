@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>材料询价单 - MVP</title>
+<link rel="stylesheet" href="/static/common.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <a href="/static/internal/home.html" style="color:inherit;">🏢 模具委外采购系统</a>
+    &nbsp;›&nbsp; <span style="color:#e2e8f0;">材料询价</span>
+  </div>
+  <div class="user">
+    <a href="/static/internal/outsource-orders.html" class="nav-link">🛠 加工单</a>
+    <a href="/static/internal/approvals.html" class="nav-link">📋 待办</a>
+    <span class="badge">internal</span>
+    <span id="user-name">—</span>
+    <button class="logout" onclick="App.logout()">退出</button>
+  </div>
+</header>
+
+<main>
+  <div class="page-header">
+    <h1>📨 材料询价</h1>
+    <div class="muted">仅 material_sourcing=internal 的加工单可发材料询价</div>
+  </div>
+
+  <!-- 询价列表 -->
+  <div class="card" id="listCard">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+      <h2 style="margin:0; border:none; padding:0;">📋 询价单</h2>
+      <div>
+        <select id="statusFilter" onchange="loadList()" style="width:140px; display:inline-block; margin-right:10px;">
+          <option value="">全部状态</option>
+          <option value="draft">草稿</option>
+          <option value="inviting">群发中</option>
+          <option value="pending_award">待中标</option>
+          <option value="awarded">已中标</option>
+          <option value="cancelled">已取消</option>
+        </select>
+        <button class="primary" onclick="openCreate()">+ 新建询价</button>
+      </div>
+    </div>
+    <table>
+      <thead><tr>
+        <th>单号</th><th>关联加工单</th><th>项目</th><th>材料</th>
+        <th>规格</th><th>数量</th><th>状态</th><th>创建时间</th>
+      </tr></thead>
+      <tbody id="tbody"><tr><td colspan="8" class="empty">加载中...</td></tr></tbody>
+    </table>
+  </div>
+
+  <!-- 询价详情 -->
+  <div class="card" id="detailCard" style="display:none;">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <h2 style="margin:0; border:none; padding:0;">🔎 询价单详情 <code id="d_no"></code></h2>
+      <div class="row-actions">
+        <span id="d_status" class="badge"></span>
+        <button class="primary" id="btnSend"  onclick="doSend()"  style="display:none;">📢 群发询价</button>
+        <button class="primary" id="btnClose" onclick="doClose()" style="display:none; background:#f59e0b;">🔒 截止报价</button>
+        <button class="secondary" onclick="backToList()">返回列表</button>
+      </div>
+    </div>
+    <div id="d_basic" style="margin-top:14px;"></div>
+    <div style="margin-top:14px;">
+      <h3>📬 报价情况</h3>
+      <table>
+        <thead><tr>
+          <th>材料方</th><th>状态</th><th>单价</th><th>交期</th>
+          <th>总金额</th><th>备注</th><th>提交时间</th>
+        </tr></thead>
+        <tbody id="invBody"></tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<!-- 新建 modal -->
+<div class="modal-bg" id="createModal">
+  <div class="modal">
+    <h3>+ 新建材料询价单</h3>
+    <form onsubmit="return submitCreate(event)">
+      <label>关联加工单 *</label>
+      <select name="outsource_order_id" id="ooSel" required></select>
+      <div class="flex">
+        <div class="flex-grow"><label>材料号 *</label><input name="material_code" required placeholder="Cr12MoV"></div>
+        <div class="flex-grow"><label>材料名称</label><input name="material_name"></div>
+      </div>
+      <div class="flex">
+        <div class="flex-grow"><label>规格</label><input name="spec" placeholder="200x100x50"></div>
+        <div class="flex-grow"><label>数量 *</label><input name="qty" type="number" step="0.1" required></div>
+        <div class="flex-grow"><label>单位</label><input name="unit" value="kg"></div>
+      </div>
+      <label>需求到货日期</label>
+      <input name="required_date" type="date">
+      <div class="modal-actions">
+        <button type="button" class="secondary" onclick="closeCreate()">取消</button>
+        <button type="submit" class="primary">创建</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="/static/app.js"></script>
+<script>
+(function () {
+  const user = App.requireTenantType('internal');
+  document.getElementById('user-name').textContent = user.display_name || user.username;
+
+  function toast(msg, err=false) {
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.className = 'toast show ' + (err?'error':'success');
+    setTimeout(() => t.className = 'toast', 2500);
+  }
+
+  // 可能从 outsource-orders 跳转过来 ?oo_id=xx&new=1
+  const sp = new URLSearchParams(location.search);
+  const ooParam = sp.get('oo_id');
+  const newParam = sp.get('new');
+
+  let _currentInqId = null;
+
+  window.loadList = async () => {
+    const sf = document.getElementById('statusFilter').value;
+    const url = '/api/internal/material-inquiries' + (sf ? '?status_filter=' + sf : '');
+    const r = await App.api(url);
+    const body = document.getElementById('tbody');
+    const STATUS_CN = { draft:'草稿', inviting:'群发中', pending_award:'待中标',
+                        comparing:'比对中', awarded:'已中标', cancelled:'已取消' };
+    if (!r.items.length) {
+      body.innerHTML = `<tr><td colspan="8" class="empty">还没有询价单</td></tr>`;
+      return;
+    }
+    body.innerHTML = r.items.map(i => `
+      <tr onclick="openDetail(${i.id})" style="cursor:pointer;">
+        <td><code>${App.esc(i.inquiry_no)}</code></td>
+        <td><code>${App.esc(i.outsource_order_no)}</code></td>
+        <td>${App.esc(i.project_no)} · ${App.esc(i.project_name || '')}</td>
+        <td><b>${App.esc(i.material_code)}</b></td>
+        <td>${App.esc(i.spec || '—')}</td>
+        <td>${i.qty}${i.unit}</td>
+        <td><span class="badge ${i.status}">${STATUS_CN[i.status] || i.status}</span></td>
+        <td class="muted">${App.fmtDate(i.created_at)}</td>
+      </tr>`).join('');
+  };
+
+  window.openDetail = async (inq_id) => {
+    _currentInqId = inq_id;
+    try {
+      const d = await App.api(`/api/internal/material-inquiries/${inq_id}`);
+      const i = d.inquiry;
+      document.getElementById('d_no').textContent = i.inquiry_no;
+      const chip = document.getElementById('d_status');
+      chip.className = 'badge ' + i.status;
+      chip.textContent = i.status;
+      document.getElementById('d_basic').innerHTML = `
+        <div><b>项目</b>: <code>${App.esc(i.project_no)}</code> · ${App.esc(i.project_name || '')}</div>
+        <div><b>关联加工单</b>: <code>${App.esc(i.outsource_order_no)}</code></div>
+        <div style="margin-top:6px;">
+          <b>材料</b>: ${App.esc(i.material_code)} · ${App.esc(i.material_name || '—')}
+          &nbsp;|&nbsp; <b>规格</b>: ${App.esc(i.spec || '—')}
+          &nbsp;|&nbsp; <b>数量</b>: ${i.qty}${i.unit}
+        </div>
+        <div style="margin-top:4px;"><b>需求日期</b>: ${App.esc(i.required_date || '—')}</div>
+      `;
+
+      document.getElementById('btnSend').style.display  = i.status === 'draft' ? 'inline-block' : 'none';
+      document.getElementById('btnClose').style.display = (i.status === 'inviting' && d.stats.quoted > 0) ? 'inline-block' : 'none';
+
+      const tb = document.getElementById('invBody');
+      if (!d.invitations.length) {
+        tb.innerHTML = `<tr><td colspan="7" class="empty">尚未群发</td></tr>`;
+      } else {
+        tb.innerHTML = d.invitations.map(v => {
+          const total = v.unit_price ? (v.unit_price * i.qty).toFixed(2) : '—';
+          const SM = { sent:'待回复', quoted:'已报价', no_response:'未响应', cancelled:'已取消' };
+          return `<tr>
+            <td>${App.esc(v.supplier_name)}</td>
+            <td><span class="badge ${v.invitation_status}">${SM[v.invitation_status]}</span></td>
+            <td>${v.unit_price != null ? '¥' + v.unit_price : '—'}</td>
+            <td>${v.lead_time_days ? v.lead_time_days + ' 天' : '—'}</td>
+            <td>${total !== '—' ? '¥' + total : '—'}</td>
+            <td class="muted">${App.esc(v.note || '—')}</td>
+            <td class="muted">${v.submitted_at ? App.fmtDate(v.submitted_at) : '—'}</td>
+          </tr>`;
+        }).join('');
+      }
+
+      document.getElementById('listCard').style.display = 'none';
+      document.getElementById('detailCard').style.display = '';
+    } catch (e) { toast('❌ ' + e.message, true); }
+  };
+
+  window.backToList = () => {
+    document.getElementById('detailCard').style.display = 'none';
+    document.getElementById('listCard').style.display = '';
+    _currentInqId = null;
+    loadList();
+  };
+
+  window.doSend = async () => {
+    if (!confirm('将群发给所有材料方，确定？')) return;
+    try {
+      const r = await App.api(`/api/internal/material-inquiries/${_currentInqId}/send`, { method:'POST' });
+      toast(`✓ 已发送给 ${r.invited_count} 家`);
+      openDetail(_currentInqId);
+    } catch (e) { toast('❌ ' + e.message, true); }
+  };
+
+  window.doClose = async () => {
+    if (!confirm('截止报价后将推送采购审批，是否继续？')) return;
+    try {
+      const r = await App.api(`/api/internal/material-inquiries/${_currentInqId}/close-quoting`, { method:'POST' });
+      toast(`✓ 已截止，审批任务 #${r.task_id} 已创建`);
+      openDetail(_currentInqId);
+    } catch (e) { toast('❌ ' + e.message, true); }
+  };
+
+  // 新建
+  window.openCreate = async () => {
+    // 拉可选外协单
+    const orders = await App.api('/api/internal/outsource-orders');
+    const opts = orders.items
+      .filter(o => o.material_sourcing === 'internal')
+      .map(o => `<option value="${o.id}">${App.esc(o.order_no)} · ${App.esc(o.project_name || '')}</option>`)
+      .join('');
+    const sel = document.getElementById('ooSel');
+    sel.innerHTML = opts || '<option value="">（没有 material_sourcing=internal 的加工单）</option>';
+    if (ooParam) sel.value = ooParam;
+    document.getElementById('createModal').classList.add('show');
+  };
+  window.closeCreate = () => document.getElementById('createModal').classList.remove('show');
+
+  window.submitCreate = async (ev) => {
+    ev.preventDefault();
+    const fd = new FormData(ev.target);
+    const body = {};
+    fd.forEach((v, k) => {
+      if (v === '') return;
+      if (k === 'outsource_order_id') body[k] = parseInt(v);
+      else if (k === 'qty') body[k] = parseFloat(v);
+      else body[k] = v;
+    });
+    try {
+      const r = await App.api('/api/internal/material-inquiries',
+        { method:'POST', body });
+      toast(`✓ 已创建 ${r.inquiry_no}`);
+      closeCreate();
+      ev.target.reset();
+      await loadList();
+      openDetail(r.id);
+    } catch (e) { toast('❌ ' + e.message, true); }
+    return false;
+  };
+
+  // 初始化
+  loadList();
+  if (ooParam && newParam === '1') {
+    setTimeout(openCreate, 300);
+  }
+})();
+</script>
+</body>
+</html>

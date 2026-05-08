@@ -45,11 +45,12 @@
           <th>数量</th>
           <th>总金额</th>
           <th>交期</th>
+          <th>材料供应</th>
           <th>状态</th>
           <th>中标时间</th>
         </tr>
       </thead>
-      <tbody id="tbody"><tr><td colspan="9" class="empty">加载中...</td></tr></tbody>
+      <tbody id="tbody"><tr><td colspan="10" class="empty">加载中...</td></tr></tbody>
     </table>
   </div>
 </main>
@@ -72,10 +73,21 @@
     try {
       const data = await App.api(url);
       if (!data.items.length) {
-        tbody.innerHTML = `<tr><td colspan="9" class="empty">还没有加工单（由采购经理审批中标后生成）</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="10" class="empty">还没有加工单（由采购经理审批中标后生成）</td></tr>`;
         return;
       }
-      tbody.innerHTML = data.items.map(o => `
+      tbody.innerHTML = data.items.map(o => {
+        let sourcingCell = '';
+        if (o.material_sourcing === 'internal') {
+          sourcingCell = `<span class="badge info">🏢 我方采购</span>
+            <a href="/static/internal/material-inquiries.html?oo_id=${o.id}" style="font-size:11px; margin-left:4px;">管理</a>`;
+        } else if (o.material_sourcing === 'processor') {
+          sourcingCell = `<span class="badge warn">🏭 加工方自采</span>`;
+        } else {
+          sourcingCell = `<button class="primary" style="padding:4px 10px; font-size:11px;"
+                                 onclick="chooseSourcing(${o.id})">🔀 选择</button>`;
+        }
+        return `
         <tr>
           <td><code>${App.esc(o.order_no)}</code></td>
           <td><code>${App.esc(o.project_no)}</code> ${App.esc(o.project_name || '')}</td>
@@ -84,15 +96,41 @@
           <td>${o.quantity}</td>
           <td><b>¥${o.total_amount}</b></td>
           <td>${o.lead_time_days} 天</td>
+          <td>${sourcingCell}</td>
           <td><span class="badge ${o.status}">${App.esc(STATUS_CN[o.status] || o.status)}</span></td>
           <td class="muted">${App.fmtDate(o.awarded_at)}</td>
         </tr>
-      `).join('');
+      `;}).join('');
     } catch (e) {
-      tbody.innerHTML = `<tr><td colspan="9" class="empty">❌ ${App.esc(e.message)}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="10" class="empty">❌ ${App.esc(e.message)}</td></tr>`;
     }
   }
   window.load = load;
+
+  window.chooseSourcing = async (order_id) => {
+    const choice = prompt(
+      '选择材料供应方式：\n\n' +
+      '  internal  - 我方找材料方（我方发询价单 → 材料方报价 → 我方选中标）\n' +
+      '  processor - 加工方自己找（加工方上传自采凭证即可）\n\n' +
+      '请输入 internal 或 processor：',
+      'internal'
+    );
+    if (!['internal','processor'].includes(choice)) return;
+    try {
+      await App.api(`/api/internal/outsource-orders/${order_id}/sourcing`,
+                    { method:'POST', body:{ material_sourcing: choice } });
+      if (choice === 'internal') {
+        if (confirm('✓ 已选我方采购模式。现在去建材料询价单？')) {
+          location.href = `/static/internal/material-inquiries.html?oo_id=${order_id}&new=1`;
+          return;
+        }
+      } else {
+        alert('✓ 已选加工方自采模式。加工方登录后可在订单详情页上传自采凭证。');
+      }
+      load();
+    } catch (e) { alert('❌ ' + e.message); }
+  };
+
   load();
 })();
 </script>

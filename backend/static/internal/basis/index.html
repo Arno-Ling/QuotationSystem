@@ -42,7 +42,7 @@
     <div class="tab"        data-tab="eq">⚙️ 设备产能</div>
     <div class="tab"        data-tab="moq">📦 MOQ 规则</div>
     <div class="tab"        data-tab="inv">🏭 库存</div>
-    <div class="tab"        data-tab="sup">🏢 供应商能力</div>
+    <div class="tab"        data-tab="sup">🏢 供应商</div>
   </div>
 
   <!-- 原料价格 -->
@@ -139,19 +139,79 @@
     </div>
   </div>
 
-  <!-- 供应商能力 -->
+  <!-- 供应商 -->
   <div class="panel" data-panel="sup" style="display:none;">
-    <div class="card">
+    <div class="crud-toolbar">
+      <div style="display:flex; gap:10px; align-items:center;">
+        <input type="text" id="supQ" placeholder="🔍 搜供应商名称/联系人..." oninput="loadSup()" style="width:260px;">
+        <select id="supTenantFilter" onchange="loadSup()" style="width:140px;">
+          <option value="">全部关联状态</option>
+          <option value="1">已配账号</option>
+          <option value="0">未配账号</option>
+        </select>
+      </div>
+      <button class="primary" onclick="openSupModal()">+ 新建供应商</button>
+    </div>
+
+    <div class="card" style="padding:0;">
       <table>
         <thead><tr>
-          <th>供应商</th><th>类别</th><th>工艺能力（绿=内部/红=强制委外）</th>
-          <th>联系人</th><th>电话</th><th>评分</th>
+          <th>供应商</th>
+          <th>类别</th>
+          <th>联系人</th>
+          <th>电话</th>
+          <th>工艺能力</th>
+          <th>账号</th>
+          <th>评分</th>
+          <th style="width:150px;">操作</th>
         </tr></thead>
-        <tbody id="supBody"><tr><td colspan="6" class="empty">—</td></tr></tbody>
+        <tbody id="supBody"><tr><td colspan="8" class="empty">加载中...</td></tr></tbody>
       </table>
     </div>
+
+    <p class="muted" style="font-size:11px; margin-top:10px;">
+      💡 工艺能力中带 <span style="color:#fca5a5;">⚠</span> 表示该工艺我方不具备能力（强制委外类）。点击【编辑能力】可勾选。
+    </p>
   </div>
 </main>
+
+<!-- 新建/编辑 供应商 modal -->
+<div class="modal-bg" id="supModal">
+  <div class="modal" style="max-width:560px;">
+    <h3 id="supModalTitle">新建供应商</h3>
+    <form onsubmit="return submitSup(event)">
+      <input type="hidden" name="id">
+      <label>公司名称 *</label>
+      <input name="name" required placeholder="例：青岛华欣泽机械模具有限公司">
+      <label>主营类别</label>
+      <input name="category" placeholder="模架 / 全加工零件 / 模具钢 / 慢丝 等">
+      <label>地址</label>
+      <input name="address">
+      <div class="flex">
+        <div class="flex-grow"><label>联系人</label><input name="contact_name"></div>
+        <div class="flex-grow"><label>电话</label><input name="contact_phone"></div>
+        <div style="width:110px;"><label>评分 (0-5)</label><input name="rating" type="number" step="0.1" min="0" max="5"></div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="secondary" onclick="closeModal('supModal')">取消</button>
+        <button type="submit" class="primary">保存</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- 编辑能力 modal -->
+<div class="modal-bg" id="capModal">
+  <div class="modal" style="max-width:680px;">
+    <h3>🔧 编辑工艺能力 — <span id="capSupName" style="color:#fbbf24;"></span></h3>
+    <p class="muted" style="font-size:12px; margin-bottom:12px;">点击工艺芯片切换选中状态，点【保存】提交。带 ⚠ 的是强制委外类工艺（我方不具备，通常不会勾选给自制方）</p>
+    <div id="capMatrix"></div>
+    <div class="modal-actions">
+      <button type="button" class="secondary" onclick="closeModal('capModal')">取消</button>
+      <button class="primary" onclick="saveCap()">💾 保存 (<span id="capCount">0</span> 项)</button>
+    </div>
+  </div>
+</div>
 
 <!-- 原料价格 modal -->
 <div class="modal-bg" id="matModal">
@@ -544,13 +604,172 @@
     return false;
   };
 
-  // ---------------- 供应商能力（复用已有接口） ----------------
+  // ---------------- 供应商 ----------------
+  let _allMethods = null;
+  let _capSupId = null;
+  let _capSelected = new Set();
+  const CAT_CN = {cutting:'切削', grinding:'磨削', edm:'电火花', heat:'热处理', surface:'表面处理', other:'其他'};
+
+  async function ensureAllMethods() {
+    if (_allMethods) return _allMethods;
+    const r = await App.api('/api/internal/process-methods');
+    _allMethods = r.items;
+    return _allMethods;
+  }
+
   window.loadSup = async () => {
-    // 用 supplier_capabilities + suppliers 拼
-    // 这里直接调现有候选匹配接口取样不太合适，直接查 /basis 扩展更好
-    // MVP：调一个简化的聚合查询 — 先用 process-methods + supplier_capabilities 自己拼
+    const q = document.getElementById('supQ').value.trim().toLowerCase();
+    const tenFilter = document.getElementById('supTenantFilter').value;
+    const r = await App.api('/api/internal/admin/suppliers');
+    let items = r.items;
+    if (q) {
+      items = items.filter(s =>
+        s.name.toLowerCase().includes(q) ||
+        (s.contact_name || '').toLowerCase().includes(q) ||
+        (s.category || '').toLowerCase().includes(q)
+      );
+    }
+    if (tenFilter !== '') {
+      items = items.filter(s => String(s.is_tenant ? 1 : 0) === tenFilter);
+    }
+
     const body = document.getElementById('supBody');
-    body.innerHTML = `<tr><td colspan="6" class="empty">⏳ 此页在后续阶段补充（下一迭代）</td></tr>`;
+    if (!items.length) {
+      body.innerHTML = `<tr><td colspan="8" class="empty">${q||tenFilter ? '没有符合条件的供应商' : '暂无供应商'}</td></tr>`;
+      return;
+    }
+
+    body.innerHTML = items.map(s => {
+      // 工艺能力 chips（取前 6 个，多的加 "…N 项"）
+      const caps = (s.capabilities_csv || '').split(',').map(x => x.trim()).filter(Boolean);
+      const capHtml = caps.length
+        ? (caps.slice(0, 6).map(c => `<span class="mat-badge" style="font-size:10px; padding:2px 7px; border-radius:10px; background:rgba(96,165,250,.15); color:#93c5fd; margin:1px; display:inline-block;">${App.esc(c)}</span>`).join('')
+           + (caps.length > 6 ? `<span class="muted" style="font-size:10px; margin-left:4px;">+${caps.length-6}</span>` : ''))
+        : '<span class="muted" style="font-size:11px;">未配置</span>';
+
+      const rating = s.rating != null
+        ? `<span style="color:#fbbf24;">${'★'.repeat(Math.round(s.rating))}${'☆'.repeat(5-Math.round(s.rating))}</span> <span class="muted" style="font-size:11px;">${s.rating.toFixed(1)}</span>`
+        : '<span class="muted">—</span>';
+
+      return `
+        <tr>
+          <td><b>${App.esc(s.name)}</b></td>
+          <td>${App.esc(s.category || '—')}</td>
+          <td>${App.esc(s.contact_name || '—')}</td>
+          <td class="muted">${App.esc(s.contact_phone || '—')}</td>
+          <td style="max-width:360px;">${capHtml}</td>
+          <td>${s.is_tenant ? '<span class="badge info">✓ 有账号</span>' : '<span class="muted">—</span>'}</td>
+          <td>${rating}</td>
+          <td>
+            <button class="secondary" style="padding:4px 10px; font-size:11px;" onclick='editSup(${JSON.stringify(s).replace(/'/g,"\\'")})'>改</button>
+            <button class="secondary" style="padding:4px 10px; font-size:11px;" onclick='openCapModal(${s.id}, "${App.esc(s.name)}")'>能力</button>
+            ${s.is_tenant ? '' : `<button class="danger" onclick="delSup(${s.id}, '${App.esc(s.name)}')">删</button>`}
+          </td>
+        </tr>`;
+    }).join('');
+  };
+
+  window.openSupModal = () => {
+    const f = document.querySelector('#supModal form');
+    f.reset();
+    f.elements['id'].value = '';
+    document.getElementById('supModalTitle').textContent = '+ 新建供应商';
+    document.getElementById('supModal').classList.add('show');
+  };
+  window.editSup = (s) => {
+    const f = document.querySelector('#supModal form');
+    f.reset();
+    ['id','name','category','address','contact_name','contact_phone','rating'].forEach(k => {
+      if (f.elements[k]) f.elements[k].value = s[k] ?? '';
+    });
+    document.getElementById('supModalTitle').textContent = '修改供应商';
+    document.getElementById('supModal').classList.add('show');
+  };
+  window.submitSup = async (ev) => {
+    ev.preventDefault();
+    const fd = new FormData(ev.target);
+    const body = {};
+    ['name','category','address','contact_name','contact_phone'].forEach(k => {
+      const v = fd.get(k);
+      if (v !== null && v !== '') body[k] = v;
+    });
+    const rating = fd.get('rating');
+    if (rating) body.rating = parseFloat(rating);
+    const id = fd.get('id');
+    try {
+      if (id) await App.api(`/api/internal/admin/suppliers/${id}`, { method:'PATCH', body });
+      else    await App.api('/api/internal/admin/suppliers', { method:'POST', body });
+      showToast('✓ 已保存');
+      closeModal('supModal');
+      loadSup();
+    } catch (e) { showToast('❌ ' + e.message, 'error'); }
+    return false;
+  };
+  window.delSup = async (id, name) => {
+    if (!confirm(`确定删除供应商「${name}」？将级联删除其工艺能力标签。`)) return;
+    try {
+      await App.api(`/api/internal/admin/suppliers/${id}`, { method:'DELETE' });
+      showToast('✓ 已删除');
+      loadSup();
+    } catch (e) { showToast('❌ ' + e.message, 'error'); }
+  };
+
+  window.openCapModal = async (supplier_id, supplier_name) => {
+    await ensureAllMethods();
+    _capSupId = supplier_id;
+    document.getElementById('capSupName').textContent = supplier_name;
+
+    // 当前已有能力
+    const r = await App.api('/api/internal/admin/suppliers');
+    const sup = r.items.find(x => x.id === supplier_id);
+    _capSelected = new Set((sup.capabilities_csv || '').split(',').map(s => s.trim()).filter(Boolean));
+
+    const groups = {};
+    _allMethods.forEach(m => { (groups[m.category] = groups[m.category] || []).push(m); });
+
+    document.getElementById('capMatrix').innerHTML =
+      Object.entries(groups).map(([cat, list]) => `
+        <div style="margin-bottom:14px;">
+          <div style="color:#94a3b8; font-size:11px; text-transform:uppercase; letter-spacing:.3px; margin-bottom:6px; font-weight:600;">
+            ${CAT_CN[cat] || cat}
+          </div>
+          <div style="display:flex; flex-wrap:wrap; gap:6px;">
+            ${list.map(m => {
+              const warn = m.is_internal_capable ? '' : ' ⚠';
+              return `<span class="cap-chip ${_capSelected.has(m.name)?'active':''}"
+                            onclick="toggleCap('${App.esc(m.name)}', this)"
+                            style="font-size:12px; padding:6px 14px; border-radius:18px; cursor:pointer;
+                                   background:${_capSelected.has(m.name)?'#1e40af':'#334155'};
+                                   color:${_capSelected.has(m.name)?'#93c5fd':'#cbd5e1'};
+                                   border:1px solid ${_capSelected.has(m.name)?'#60a5fa':'transparent'};
+                                   user-select:none;">${App.esc(m.name)}${warn}</span>`;
+            }).join('')}
+          </div>
+        </div>
+      `).join('');
+    document.getElementById('capCount').textContent = _capSelected.size;
+    document.getElementById('capModal').classList.add('show');
+  };
+  window.toggleCap = (name, el) => {
+    if (_capSelected.has(name)) {
+      _capSelected.delete(name);
+      el.style.background = '#334155'; el.style.color = '#cbd5e1'; el.style.borderColor = 'transparent';
+    } else {
+      _capSelected.add(name);
+      el.style.background = '#1e40af'; el.style.color = '#93c5fd'; el.style.borderColor = '#60a5fa';
+    }
+    document.getElementById('capCount').textContent = _capSelected.size;
+  };
+  window.saveCap = async () => {
+    try {
+      await App.api('/api/internal/admin/supplier-capabilities', {
+        method: 'PUT',
+        body: { supplier_id: _capSupId, method_names: Array.from(_capSelected) },
+      });
+      showToast(`✓ 已保存 ${_capSelected.size} 项能力`);
+      closeModal('capModal');
+      loadSup();
+    } catch (e) { showToast('❌ ' + e.message, 'error'); }
   };
 
   // ---------------- 启动 ----------------

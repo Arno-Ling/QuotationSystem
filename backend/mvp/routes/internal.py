@@ -2440,7 +2440,7 @@ async def list_orders(
     rows = db.fetch_all(
         f"""
         SELECT o.id, o.order_no, o.unit_price, o.quantity, o.total_amount,
-               o.lead_time_days, o.status,
+               o.lead_time_days, o.status, o.material_sourcing,
                o.awarded_at, o.accepted_at, o.delivered_at, o.created_at,
                s.name AS supplier_name,
                p.project_no, p.name AS project_name,
