@@ -434,3 +434,107 @@ async def deactivate_user(user_id: int,
         raise HTTPException(status_code=400, detail="不可停用自己")
     db.execute("UPDATE users SET is_active = FALSE WHERE id = %s", (user_id,))
     return {"deactivated": True}
+
+
+
+# =============================================================================
+# 6. 材料商视角（基于 material_prices 聚合）
+# =============================================================================
+
+class MaterialSupplyPayload(BaseModel):
+    supplier_id: int
+    material_code: str = Field(..., max_length=64)
+    material_name: Optional[str] = None
+    spec: Optional[str] = None
+    unit: str = "kg"
+    unit_price: float = Field(..., gt=0)
+    valid_from: str             # YYYY-MM-DD
+    valid_to: Optional[str] = None
+
+
+@router.get("/material-suppliers")
+async def list_material_suppliers(user: CurrentUser = Depends(_require_internal)):
+    """材料商列表：有 material_prices 关联的 suppliers。
+
+    每条包含：基础信息 + 供应的材料清单（含价格和有效期）
+    """
+    # 所有在 material_prices 登记过的 supplier，或者 tenant_type='material'
+    rows = db.fetch_all(
+        """
+        SELECT s.*,
+               EXISTS(SELECT 1 FROM tenants t WHERE t.supplier_id = s.id AND t.tenant_type = 'material') AS is_material_tenant,
+               EXISTS(SELECT 1 FROM tenants t WHERE t.supplier_id = s.id) AS is_tenant,
+               (SELECT COUNT(*) FROM material_prices mp WHERE mp.supplier_id = s.id AND mp.is_active = TRUE) AS material_count
+        FROM suppliers s
+        WHERE EXISTS(SELECT 1 FROM material_prices mp WHERE mp.supplier_id = s.id)
+           OR EXISTS(SELECT 1 FROM tenants t WHERE t.supplier_id = s.id AND t.tenant_type = 'material')
+        ORDER BY s.name
+        """
+    )
+    for r in rows:
+        if r.get("rating") is not None:
+            r["rating"] = float(r["rating"])
+
+    # 对每个 supplier 带上供应材料清单
+    for r in rows:
+        mats = db.fetch_all(
+            """
+            SELECT id, material_code, material_name, spec, unit, unit_price,
+                   valid_from, valid_to, remark, is_active,
+                   (valid_to IS NOT NULL AND valid_to < CURRENT_DATE) AS expired,
+                   (valid_to IS NOT NULL AND valid_to - CURRENT_DATE <= 15 AND valid_to >= CURRENT_DATE) AS expiring_soon
+            FROM material_prices
+            WHERE supplier_id = %s AND is_active = TRUE
+            ORDER BY material_code, valid_from DESC
+            """,
+            (r["id"],),
+        )
+        for m in mats:
+            m["unit_price"] = float(m["unit_price"])
+        r["materials"] = mats
+
+    return {"items": rows, "total": len(rows)}
+
+
+@router.post("/material-suppliers/supply", status_code=201)
+async def add_material_supply(
+    payload: MaterialSupplyPayload,
+    user: CurrentUser = Depends(_require_internal),
+):
+    """给某个材料商登记一条供应材料（价格）"""
+    _require_admin(user)
+    # 校验 supplier 存在
+    sup = db.fetch_one("SELECT id FROM suppliers WHERE id=%s", (payload.supplier_id,))
+    if sup is None:
+        raise HTTPException(status_code=404, detail="Supplier not found")
+
+    try:
+        new_id = db.execute(
+            """
+            INSERT INTO material_prices
+                (material_code, material_name, spec, unit, unit_price, supplier_id,
+                 valid_from, valid_to, source)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'manual')
+            RETURNING id
+            """,
+            (payload.material_code, payload.material_name, payload.spec,
+             payload.unit, payload.unit_price, payload.supplier_id,
+             payload.valid_from, payload.valid_to),
+        )
+    except Exception as e:
+        if "uk_mat_price_key" in str(e):
+            raise HTTPException(status_code=409,
+                                detail="同材料/规格/供应商/生效日期已存在")
+        raise
+    return {"id": new_id}
+
+
+@router.delete("/material-suppliers/supply/{price_id}")
+async def delete_material_supply(
+    price_id: int,
+    user: CurrentUser = Depends(_require_internal),
+):
+    """删除某条供应材料（软删：is_active=FALSE）"""
+    _require_admin(user)
+    db.execute("UPDATE material_prices SET is_active = FALSE WHERE id = %s", (price_id,))
+    return {"deactivated": True}

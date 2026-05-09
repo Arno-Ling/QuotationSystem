@@ -7,11 +7,20 @@
 <style>
 .mat-badge { font-size:11px; padding:2px 8px; border-radius:3px; background:rgba(96,165,250,.15); color:#93c5fd; margin:2px; display:inline-block; }
 .mat-badge.forced { background:rgba(239,68,68,.15); color:#fca5a5; }
+.mat-badge.warn   { background:rgba(250,204,21,.15); color:#fde68a; }
+.mat-badge.danger { background:rgba(239,68,68,.2);  color:#fca5a5; }
 .cap-chip { font-size:11px; padding:4px 10px; border-radius:15px; background:#334155; color:#cbd5e1; margin:3px; cursor:pointer; user-select:none; border:1px solid transparent; }
 .cap-chip.active { background:#1e40af; color:#93c5fd; border-color:#60a5fa; }
 .cap-chip:hover { border-color:#60a5fa; }
 .user-active { color:#6ee7b7; }
 .user-inactive { color:#fca5a5; text-decoration:line-through; }
+.modal-xl .modal { max-width: 900px; }
+.inline-form { display:grid; grid-template-columns: repeat(6, 1fr); gap:8px; align-items:end; margin-top:12px; }
+.inline-form label { font-size:12px; color:#94a3b8; margin-bottom:2px; display:block; }
+.inline-form input { padding:6px 8px; font-size:13px; }
+.mat-table { width:100%; font-size:13px; }
+.mat-table th { color:#94a3b8; font-size:11px; text-transform:uppercase; padding:6px 8px; border-bottom:1px solid #334155; }
+.mat-table td { padding:6px 8px; border-bottom:1px solid rgba(51,65,85,.5); }
 </style>
 </head>
 <body>
@@ -31,13 +40,13 @@
 <main>
   <div class="page-header">
     <h1>⚙️ 系统管理</h1>
-    <div class="muted">维护加工方式字典、供应商、合作租户、用户</div>
+    <div class="muted">维护加工方式字典、加工方（含工艺能力）、材料商、合作租户、用户</div>
   </div>
 
   <div class="tabs">
     <div class="tab active" data-tab="methods">🔧 加工方式</div>
-    <div class="tab" data-tab="suppliers">🏢 供应商</div>
-    <div class="tab" data-tab="caps">🔗 供应商工艺能力</div>
+    <div class="tab" data-tab="processors">🏭 加工方</div>
+    <div class="tab" data-tab="materialsup">📦 材料商</div>
     <div class="tab" data-tab="tenants">🏛 合作租户</div>
     <div class="tab" data-tab="users">👤 用户</div>
   </div>
@@ -58,37 +67,42 @@
     </div>
   </div>
 
-  <!-- 供应商 -->
-  <div class="panel" data-panel="suppliers" style="display:none;">
+  <!-- 加工方 (原 供应商 + 工艺能力 合并) -->
+  <div class="panel" data-panel="processors" style="display:none;">
     <div class="card">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
-        <h2 style="margin:0; border:none; padding:0;">供应商主档</h2>
-        <button class="primary" onclick="openSupplierModal()">+ 新建</button>
+        <h2 style="margin:0; border:none; padding:0;">加工方（供应商）</h2>
+        <div>
+          <label style="display:inline-flex; align-items:center; gap:6px; font-size:13px; margin-right:14px;">
+            <input type="checkbox" id="procCapOnly" style="width:auto;" onchange="loadProcessors()"> 仅显示有工艺能力
+          </label>
+          <button class="primary" onclick="openSupplierModal()">+ 新建加工方</button>
+        </div>
       </div>
       <table>
         <thead><tr>
           <th>名称</th><th>类别</th><th>联系人</th><th>电话</th>
-          <th>工艺能力</th><th>租户</th><th>评分</th><th style="width:120px;">操作</th>
+          <th>工艺能力</th><th>租户</th><th>评分</th><th style="width:220px;">操作</th>
         </tr></thead>
         <tbody id="suppliersBody"><tr><td colspan="8" class="empty">加载中...</td></tr></tbody>
       </table>
     </div>
   </div>
 
-  <!-- 工艺能力矩阵 -->
-  <div class="panel" data-panel="caps" style="display:none;">
+  <!-- 材料商 -->
+  <div class="panel" data-panel="materialsup" style="display:none;">
     <div class="card">
-      <h2>供应商工艺能力快速编辑</h2>
-      <p class="muted" style="margin-bottom:14px;">选择供应商，勾选其能提供的工艺（点击切换）</p>
-      <label>选择供应商</label>
-      <select id="capSupplier" onchange="loadCapMatrix(this.value)">
-        <option value="">—</option>
-      </select>
-      <div id="capMatrix" style="margin-top:18px;"></div>
-      <div id="capSaveBox" style="margin-top:14px; display:none;">
-        <button class="primary" onclick="saveCap()">💾 保存</button>
-        <span class="muted" style="margin-left:10px;">当前已选 <b id="capCount">0</b> 项</span>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+        <h2 style="margin:0; border:none; padding:0;">材料商</h2>
+        <div class="muted" style="font-size:12px;">材料商 = 主营类别为「材料」或已有材料报价的供应商；可通过「+ 新建加工方」新建供应商，再来此维护材料清单</div>
       </div>
+      <table>
+        <thead><tr>
+          <th>公司名</th><th>类别</th><th>联系人</th><th>电话</th>
+          <th>能供材料</th><th>租户</th><th>评分</th><th style="width:220px;">操作</th>
+        </tr></thead>
+        <tbody id="matSupBody"><tr><td colspan="8" class="empty">加载中...</td></tr></tbody>
+      </table>
     </div>
   </div>
 
@@ -119,7 +133,7 @@
       <table>
         <thead><tr>
           <th>账号</th><th>显示名</th><th>角色</th><th>所属租户</th>
-          <th>电话</th><th>状态</th><th style="width:180px;">操作</th>
+          <th>电话</th><th>状态</th><th style="width:220px;">操作</th>
         </tr></thead>
         <tbody id="usersBody"><tr><td colspan="7" class="empty">加载中...</td></tr></tbody>
       </table>
@@ -157,7 +171,18 @@
   <form onsubmit="return submitSupplier(event)">
     <input type="hidden" name="id">
     <label>名称 *</label><input name="name" required>
-    <label>类别 / 主营</label><input name="category" placeholder="模架 / 全加工零件 / 模具钢 等">
+    <label>类别 / 主营</label>
+    <input name="category" placeholder="模架 / 全加工零件 / 模具钢 / 材料 等" list="supCatList">
+    <datalist id="supCatList">
+      <option value="模架">
+      <option value="全加工零件">
+      <option value="模具钢">
+      <option value="材料">
+      <option value="CNC">
+      <option value="电火花">
+      <option value="热处理">
+      <option value="表面处理">
+    </datalist>
     <label>地址</label><input name="address">
     <div class="flex">
       <div class="flex-grow"><label>联系人</label><input name="contact_name"></div>
@@ -169,6 +194,54 @@
       <button type="submit" class="primary">保存</button>
     </div>
   </form>
+</div></div>
+
+<!-- 工艺能力弹窗（从加工方行的【能力】按钮触发） -->
+<div class="modal-bg modal-xl" id="capModal"><div class="modal">
+  <h3 id="capModalTitle">工艺能力</h3>
+  <p class="muted" style="margin-bottom:14px; font-size:12px;">点击芯片切换启用；⚠ 表示该工艺我方可自制，一般不用委外</p>
+  <div id="capMatrix" style="max-height:440px; overflow-y:auto;"></div>
+  <div style="margin-top:14px;">
+    <span class="muted">已选 <b id="capCount">0</b> 项</span>
+  </div>
+  <div class="modal-actions">
+    <button type="button" class="secondary" onclick="closeModal('capModal')">取消</button>
+    <button type="button" class="primary" onclick="saveCap()">💾 保存</button>
+  </div>
+</div></div>
+
+<!-- 材料清单弹窗（从材料商行的【材料清单】按钮触发） -->
+<div class="modal-bg modal-xl" id="matListModal"><div class="modal">
+  <h3 id="matListTitle">材料清单</h3>
+  <div id="matListBox" style="max-height:400px; overflow-y:auto;">
+    <table class="mat-table">
+      <thead><tr>
+        <th>材料编号</th><th>材料名</th><th>规格</th><th>单位</th>
+        <th style="text-align:right;">单价</th><th>生效日</th><th>失效日</th><th style="width:70px;">操作</th>
+      </tr></thead>
+      <tbody id="matListBody"><tr><td colspan="8" class="empty">—</td></tr></tbody>
+    </table>
+  </div>
+
+  <form onsubmit="return submitMaterialSupply(event)" style="margin-top:18px; padding-top:14px; border-top:1px solid #334155;">
+    <h4 style="margin:0 0 8px;">+ 新增供应材料</h4>
+    <div class="inline-form">
+      <div><label>材料编号 *</label><input name="material_code" required placeholder="Cr12MoV"></div>
+      <div><label>材料名</label><input name="material_name" placeholder="合金工具钢"></div>
+      <div><label>规格</label><input name="spec" placeholder="φ50*1000"></div>
+      <div><label>单位</label><input name="unit" value="kg"></div>
+      <div><label>单价 (¥) *</label><input name="unit_price" type="number" step="0.01" min="0.01" required></div>
+      <div><label>生效日 *</label><input name="valid_from" type="date" required></div>
+      <div><label>失效日</label><input name="valid_to" type="date"></div>
+      <div style="grid-column: span 5; display:flex; align-items:flex-end;">
+        <button type="submit" class="primary" style="width:100%;">新增</button>
+      </div>
+    </div>
+  </form>
+
+  <div class="modal-actions">
+    <button type="button" class="secondary" onclick="closeModal('matListModal')">关闭</button>
+  </div>
 </div></div>
 
 <!-- 租户 modal -->
@@ -250,13 +323,20 @@
   window.closeModal = (id) => document.getElementById(id).classList.remove('show');
 
   const CAT_CN = {cutting:'切削', grinding:'磨削', edm:'电火花', heat:'热处理', surface:'表面处理', other:'其他'};
+  const TYPE_CN = {internal:'我方', processor:'加工方', material:'材料方'};
 
   // tabs
   document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
     document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
     t.classList.add('active');
     document.querySelectorAll('.panel').forEach(p => p.style.display = p.dataset.panel === t.dataset.tab ? '' : 'none');
-    const loaders = { methods: loadMethods, suppliers: loadSuppliers, caps: initCaps, tenants: loadTenants, users: loadUsers };
+    const loaders = {
+      methods: loadMethods,
+      processors: loadProcessors,
+      materialsup: loadMaterialSuppliers,
+      tenants: loadTenants,
+      users: loadUsers,
+    };
     (loaders[t.dataset.tab] || (()=>{}))();
   }));
 
@@ -321,29 +401,47 @@
     } catch (e) { toast('❌ ' + e.message, true); }
   };
 
-  // =============== 供应商 ===============
-  window.loadSuppliers = async () => {
+  // =============== 加工方（原 供应商）===============
+  // 全局缓存，给能力弹窗复用
+  let _suppliersCache = [];
+  let _allMethods = [];
+
+  async function fetchMethodsOnce() {
+    if (_allMethods.length) return _allMethods;
+    const m = await App.api('/api/internal/admin/process-methods');
+    _allMethods = m.items;
+    return _allMethods;
+  }
+
+  window.loadProcessors = async () => {
     const r = await App.api('/api/internal/admin/suppliers');
+    _suppliersCache = r.items;
+    const onlyCap = document.getElementById('procCapOnly')?.checked;
+    const list = onlyCap ? r.items.filter(s => s.cap_count > 0) : r.items;
     const body = document.getElementById('suppliersBody');
-    if (!r.items.length) { body.innerHTML = `<tr><td colspan="8" class="empty">暂无</td></tr>`; return; }
-    body.innerHTML = r.items.map(s => `
+    if (!list.length) { body.innerHTML = `<tr><td colspan="8" class="empty">暂无</td></tr>`; return; }
+    body.innerHTML = list.map(s => `
       <tr>
         <td><b>${App.esc(s.name)}</b></td>
         <td>${App.esc(s.category || '—')}</td>
         <td>${App.esc(s.contact_name || '—')}</td>
         <td>${App.esc(s.contact_phone || '—')}</td>
-        <td style="max-width:260px;">${s.cap_count > 0 ? `<span class="muted">${s.cap_count} 项</span> · ${App.esc((s.capabilities_csv || '').slice(0,40))}${(s.capabilities_csv||'').length>40?'...':''}` : '<span class="muted">—</span>'}</td>
+        <td style="max-width:260px;">${s.cap_count > 0
+            ? `<span class="muted">${s.cap_count} 项</span> · ${App.esc((s.capabilities_csv || '').slice(0,40))}${(s.capabilities_csv||'').length>40?'…':''}`
+            : '<span class="muted">—</span>'}</td>
         <td>${s.is_tenant ? '<span class="badge info">有账号</span>' : '<span class="muted">—</span>'}</td>
         <td>${s.rating != null ? s.rating.toFixed(1) + ' ⭐' : '—'}</td>
         <td>
+          <button class="secondary" onclick="openCapModal(${s.id})">⚙ 能力</button>
           <button class="secondary" onclick='editSupplier(${JSON.stringify(s).replace(/'/g,"\\'")})'>改</button>
           <button class="danger" onclick="delSupplier(${s.id}, '${App.esc(s.name)}')">删</button>
         </td>
       </tr>`).join('');
   };
+
   window.openSupplierModal = () => {
     document.querySelector('#supplierModal form').reset();
-    document.getElementById('supplierModalTitle').textContent = '+ 新建供应商';
+    document.getElementById('supplierModalTitle').textContent = '+ 新建加工方';
     document.getElementById('supplierModal').classList.add('show');
   };
   window.editSupplier = (s) => {
@@ -352,17 +450,21 @@
     ['id','name','category','address','contact_name','contact_phone','rating'].forEach(k => {
       if (f.elements[k]) f.elements[k].value = s[k] ?? '';
     });
-    document.getElementById('supplierModalTitle').textContent = '修改供应商';
+    document.getElementById('supplierModalTitle').textContent = '修改加工方';
     document.getElementById('supplierModal').classList.add('show');
   };
   window.submitSupplier = async (ev) => {
     ev.preventDefault();
     const fd = new FormData(ev.target);
-    const body = {};
-    ['name','category','address','contact_name','contact_phone'].forEach(k => {
-      const v = fd.get(k);
-      if (v !== null && v !== '') body[k] = v;
-    });
+    const body = {
+      // 必填
+      name: fd.get('name'),
+      // 可选
+      category:      fd.get('category')      || null,
+      address:       fd.get('address')       || null,
+      contact_name:  fd.get('contact_name')  || null,
+      contact_phone: fd.get('contact_phone') || null,
+    };
     const rating = fd.get('rating');
     if (rating) body.rating = parseFloat(rating);
     const id = fd.get('id');
@@ -371,43 +473,42 @@
       else    await App.api('/api/internal/admin/suppliers', { method:'POST', body });
       toast('✓ 已保存');
       closeModal('supplierModal');
-      loadSuppliers();
+      // 根据当前 tab 选择性刷新
+      const activeTab = document.querySelector('.tab.active')?.dataset.tab;
+      if (activeTab === 'materialsup') loadMaterialSuppliers();
+      else loadProcessors();
     } catch (e) { toast('❌ ' + e.message, true); }
     return false;
   };
   window.delSupplier = async (id, name) => {
-    if (!confirm(`确定删除供应商「${name}」？级联删除其工艺能力标签。`)) return;
+    if (!confirm(`确定删除「${name}」？级联删除其工艺能力标签。`)) return;
     try {
       await App.api(`/api/internal/admin/suppliers/${id}`, { method:'DELETE' });
       toast('✓ 已删除');
-      loadSuppliers();
+      const activeTab = document.querySelector('.tab.active')?.dataset.tab;
+      if (activeTab === 'materialsup') loadMaterialSuppliers();
+      else loadProcessors();
     } catch (e) { toast('❌ ' + e.message, true); }
   };
 
-  // =============== 工艺能力矩阵 ===============
+  // =============== 能力弹窗 ===============
   let _capSupplierId = null;
   let _capSelected = new Set();
-  let _allMethods = [];
 
-  window.initCaps = async () => {
-    const [sup, meth] = await Promise.all([
-      App.api('/api/internal/admin/suppliers'),
-      App.api('/api/internal/admin/process-methods'),
-    ]);
-    _allMethods = meth.items;
-    const sel = document.getElementById('capSupplier');
-    sel.innerHTML = '<option value="">— 选择 —</option>' +
-      sup.items.map(s => `<option value="${s.id}">${App.esc(s.name)}</option>`).join('');
-  };
-  window.loadCapMatrix = async (sid) => {
-    if (!sid) {
-      document.getElementById('capMatrix').innerHTML = '';
-      document.getElementById('capSaveBox').style.display = 'none';
-      return;
+  window.openCapModal = async (supplierId) => {
+    _capSupplierId = supplierId;
+    await fetchMethodsOnce();
+    // 从 cache 里拿 supplier 基础信息
+    let sup = _suppliersCache.find(x => x.id === supplierId);
+    if (!sup) {
+      // 刷新一次 cache
+      const r = await App.api('/api/internal/admin/suppliers');
+      _suppliersCache = r.items;
+      sup = _suppliersCache.find(x => x.id === supplierId);
     }
-    _capSupplierId = parseInt(sid);
-    const sup = (await App.api('/api/internal/admin/suppliers')).items.find(x => x.id === _capSupplierId);
+    if (!sup) { toast('加工方未找到', true); return; }
     _capSelected = new Set((sup.capabilities_csv || '').split(',').map(s=>s.trim()).filter(Boolean));
+    document.getElementById('capModalTitle').textContent = `工艺能力 — ${sup.name}`;
 
     const groups = {};
     _allMethods.forEach(m => { (groups[m.category] = groups[m.category] || []).push(m); });
@@ -419,13 +520,13 @@
         <div>
           ${list.map(m => `
             <span class="cap-chip ${_capSelected.has(m.name)?'active':''}"
-                  onclick="toggleCap('${App.esc(m.name)}', this)">${App.esc(m.name)}${m.is_internal_capable?'':' ⚠'}</span>
+                  onclick="toggleCap('${App.esc(m.name)}', this)">${App.esc(m.name)}${m.is_internal_capable?' ⚠':''}</span>
           `).join('')}
         </div>
       </div>
     `).join('');
-    document.getElementById('capSaveBox').style.display = '';
     document.getElementById('capCount').textContent = _capSelected.size;
+    document.getElementById('capModal').classList.add('show');
   };
   window.toggleCap = (name, el) => {
     if (_capSelected.has(name)) { _capSelected.delete(name); el.classList.remove('active'); }
@@ -439,6 +540,115 @@
         body: { supplier_id: _capSupplierId, method_names: Array.from(_capSelected) },
       });
       toast(`✓ 已保存 ${_capSelected.size} 项`);
+      closeModal('capModal');
+      loadProcessors();
+    } catch (e) { toast('❌ ' + e.message, true); }
+  };
+
+  // =============== 材料商 ===============
+  let _matSupCache = [];
+  let _matCurrentSupplierId = null;
+
+  window.loadMaterialSuppliers = async () => {
+    const r = await App.api('/api/internal/admin/material-suppliers');
+    _matSupCache = r.items;
+    const body = document.getElementById('matSupBody');
+    if (!r.items.length) { body.innerHTML = `<tr><td colspan="8" class="empty">暂无材料商。可先在【加工方】新建供应商（类别填"材料"），再来维护材料清单。</td></tr>`; return; }
+    body.innerHTML = r.items.map(s => {
+      const expired = (s.materials || []).filter(m => m.expired).length;
+      const expSoon = (s.materials || []).filter(m => m.expiring_soon).length;
+      let badges = '';
+      if (expired) badges += `<span class="mat-badge danger">${expired} 过期</span>`;
+      if (expSoon) badges += `<span class="mat-badge warn">${expSoon} 即将过期</span>`;
+      return `
+        <tr>
+          <td><b>${App.esc(s.name)}</b></td>
+          <td>${App.esc(s.category || '—')}</td>
+          <td>${App.esc(s.contact_name || '—')}</td>
+          <td>${App.esc(s.contact_phone || '—')}</td>
+          <td>${s.material_count > 0 ? `<span class="mat-badge">${s.material_count} 条</span> ${badges}` : '<span class="muted">—</span>'}</td>
+          <td>${s.is_material_tenant ? '<span class="badge info">材料方账号</span>' : (s.is_tenant ? '<span class="badge">有账号</span>' : '<span class="muted">—</span>')}</td>
+          <td>${s.rating != null ? s.rating.toFixed(1) + ' ⭐' : '—'}</td>
+          <td>
+            <button class="secondary" onclick="openMatListModal(${s.id})">📦 材料清单</button>
+            <button class="secondary" onclick='editSupplier(${JSON.stringify(s).replace(/'/g,"\\'")})'>改</button>
+            <button class="danger" onclick="delSupplier(${s.id}, '${App.esc(s.name)}')">删</button>
+          </td>
+        </tr>`;
+    }).join('');
+  };
+
+  window.openMatListModal = (supplierId) => {
+    _matCurrentSupplierId = supplierId;
+    const sup = _matSupCache.find(x => x.id === supplierId);
+    if (!sup) { toast('材料商未找到', true); return; }
+    document.getElementById('matListTitle').textContent = `材料清单 — ${sup.name}`;
+    renderMatList(sup.materials || []);
+    // reset form
+    const form = document.querySelector('#matListModal form');
+    form.reset();
+    form.elements['unit'].value = 'kg';
+    // 默认生效日=今天
+    form.elements['valid_from'].value = new Date().toISOString().slice(0,10);
+    document.getElementById('matListModal').classList.add('show');
+  };
+
+  function renderMatList(mats) {
+    const body = document.getElementById('matListBody');
+    if (!mats.length) { body.innerHTML = `<tr><td colspan="8" class="empty">暂无，请在下方新增</td></tr>`; return; }
+    body.innerHTML = mats.map(m => {
+      let dateCell = App.esc(m.valid_to || '长期');
+      if (m.expired)       dateCell = `<span class="mat-badge danger">${App.esc(m.valid_to)} 过期</span>`;
+      else if (m.expiring_soon) dateCell = `<span class="mat-badge warn">${App.esc(m.valid_to)} 即将过期</span>`;
+      return `
+        <tr>
+          <td><code>${App.esc(m.material_code)}</code></td>
+          <td>${App.esc(m.material_name || '—')}</td>
+          <td class="muted">${App.esc(m.spec || '—')}</td>
+          <td>${App.esc(m.unit)}</td>
+          <td style="text-align:right;">¥ ${m.unit_price.toFixed(2)}</td>
+          <td class="muted">${App.esc(m.valid_from)}</td>
+          <td>${dateCell}</td>
+          <td><button class="danger" onclick="delMaterialSupply(${m.id})">删</button></td>
+        </tr>`;
+    }).join('');
+  }
+
+  window.submitMaterialSupply = async (ev) => {
+    ev.preventDefault();
+    const fd = new FormData(ev.target);
+    const body = {
+      supplier_id: _matCurrentSupplierId,
+      material_code: fd.get('material_code'),
+      material_name: fd.get('material_name') || null,
+      spec:          fd.get('spec') || null,
+      unit:          fd.get('unit') || 'kg',
+      unit_price:    parseFloat(fd.get('unit_price')),
+      valid_from:    fd.get('valid_from'),
+      valid_to:      fd.get('valid_to') || null,
+    };
+    try {
+      await App.api('/api/internal/admin/material-suppliers/supply', { method:'POST', body });
+      toast('✓ 已新增');
+      // 刷新弹窗 + 主表
+      await loadMaterialSuppliers();
+      const sup = _matSupCache.find(x => x.id === _matCurrentSupplierId);
+      if (sup) renderMatList(sup.materials || []);
+      ev.target.reset();
+      ev.target.elements['unit'].value = 'kg';
+      ev.target.elements['valid_from'].value = new Date().toISOString().slice(0,10);
+    } catch (e) { toast('❌ ' + e.message, true); }
+    return false;
+  };
+
+  window.delMaterialSupply = async (priceId) => {
+    if (!confirm('停用这条供应材料？（软删，保留历史记录）')) return;
+    try {
+      await App.api(`/api/internal/admin/material-suppliers/supply/${priceId}`, { method:'DELETE' });
+      toast('✓ 已停用');
+      await loadMaterialSuppliers();
+      const sup = _matSupCache.find(x => x.id === _matCurrentSupplierId);
+      if (sup) renderMatList(sup.materials || []);
     } catch (e) { toast('❌ ' + e.message, true); }
   };
 
@@ -452,10 +662,9 @@
     const r = await App.api('/api/internal/admin/tenants');
     const body = document.getElementById('tenantsBody');
     if (!r.items.length) { body.innerHTML = `<tr><td colspan="8" class="empty">暂无</td></tr>`; return; }
-    const typeCN = {internal:'我方', processor:'加工方', material:'材料方'};
     body.innerHTML = r.items.map(t => `
       <tr>
-        <td><span class="badge">${typeCN[t.tenant_type]}</span></td>
+        <td><span class="badge">${TYPE_CN[t.tenant_type]}</span></td>
         <td><b>${App.esc(t.name)}</b></td>
         <td>${App.esc(t.supplier_name || '—')}</td>
         <td>${App.esc(t.contact_name || '—')}</td>
@@ -541,8 +750,7 @@
   };
   async function loadTenantOptions(sel) {
     const r = await App.api('/api/internal/admin/tenants');
-    const typeCN = {internal:'我方', processor:'加工方', material:'材料方'};
-    sel.innerHTML = r.items.map(t => `<option value="${t.id}">[${typeCN[t.tenant_type]}] ${App.esc(t.name)}</option>`).join('');
+    sel.innerHTML = r.items.map(t => `<option value="${t.id}">[${TYPE_CN[t.tenant_type]}] ${App.esc(t.name)}</option>`).join('');
   }
   window.openUserModal = async () => {
     const f = document.querySelector('#userModal form');
@@ -616,6 +824,7 @@
     } catch (e) { toast('❌ ' + e.message, true); }
   };
 
+  // 初始加载
   loadMethods();
 })();
 </script>
